@@ -1,45 +1,55 @@
-"use client"; // Mark this as a Client Component
+"use client";
 
 import React, { useState } from 'react';
-import FileUpload from '@/components/FileUpload';
-import ManualEntryForm from '@/components/ManualEntryForm';
+import PagamentosForm from '@/components/PagamentosForm'; // Renamed import
 import ConfigurationPanel from '@/components/ConfigurationPanel';
 import ReportDisplay from '@/components/ReportDisplay';
+import { PaymentRow } from '@/lib/dsr-calculator';
 
-// Define types for our state
-interface ReportData {
-  employeeId: string;
-  month: string;
-  totalCommission: number;
-  workingDays: number;
-  sundaysAndHolidays: number;
-  calculatedDSR: number;
-  paidDSR: number;
-  difference: number;
+// Add a unique id to each payment row for React key prop
+export interface PaymentRowWithId extends PaymentRow {
+  id: number;
+}
+
+// Type for the entire API response
+export interface CalculationResult {
+  details: any[];
+  totals: any;
+  dayCounts: {
+    diasSemSabado: number;
+    diasComSabado: number;
+    diasDescanso: number;
+  };
 }
 
 export default function Home() {
-  // State for the report data
-  const [reportData, setReportData] = useState<ReportData | null>(null);
-  // State for loading indicators
+  // State for the list of payments
+  const [payments, setPayments] = useState<PaymentRowWithId[]>([
+    { id: 1, valor_bruto: '5000,00', percentual_imposto: '10', percentual_comissao: '5' }
+  ]);
+
+  // State for config options
+  const [mesAno, setMesAno] = useState('2024-08');
+  const [usarComSabado, setUsarComSabado] = useState(false);
+
+  // State for the API response
+  const [calculationResult, setCalculationResult] = useState<CalculationResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  // State for error messages
   const [error, setError] = useState<string | null>(null);
 
-  // This function will be called by child components to trigger a calculation
-  const handleCalculate = async (params: { totalCommission: number, workingDays: number, restDays: number, paidDSR: number }) => {
+  const handleCalculate = async () => {
     setIsLoading(true);
     setError(null);
-    setReportData(null);
+    setCalculationResult(null);
 
     try {
       const response = await fetch('/api/calculate-dsr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          totalCommission: params.totalCommission,
-          workingDays: params.workingDays,
-          restDays: params.restDays,
+          payments: payments,
+          mesAno: mesAno,
+          usarComSabado: usarComSabado,
         }),
       });
 
@@ -49,17 +59,7 @@ export default function Home() {
       }
 
       const result = await response.json();
-
-      // Update state with the new report data
-      setReportData({
-        ...params, // Should include employeeId, month etc. in a real scenario
-        employeeId: 'Manual', // Placeholder
-        month: 'Atual', // Placeholder
-        sundaysAndHolidays: params.restDays,
-        calculatedDSR: result.calculatedDSR,
-        paidDSR: params.paidDSR,
-        difference: parseFloat((result.calculatedDSR - params.paidDSR).toFixed(2)),
-      });
+      setCalculationResult(result);
 
     } catch (err: any) {
       setError(err.message);
@@ -70,64 +70,52 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow-md">
-        <nav className="container mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-700">
-            Sistema de Auditoria de DSR sobre Comissões
+      <header className="bg-white shadow-md mb-8">
+        <div className="container mx-auto px-6 py-4">
+          <h1 className="text-3xl font-bold text-gray-800">
+            Calculadora de DSR sobre Comissões
           </h1>
-        </nav>
+        </div>
       </header>
 
-      <main className="container mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <main className="container mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
 
-          <div className="lg:col-span-1 space-y-8">
-            <section className="bg-white p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">1. Upload de Arquivos</h2>
-              <p className="text-sm text-gray-600 mb-4">
-                (Funcionalidade simulada)
-              </p>
-              <FileUpload />
-            </section>
-
-            <section className="bg-white p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">2. Entrada Manual</h2>
-              <p className="text-sm text-gray-600 mb-4">
-                Use o formulário para um cálculo rápido.
-              </p>
-              <ManualEntryForm onCalculate={handleCalculate} />
-            </section>
-          </div>
-
-          <div className="lg:col-span-2 space-y-8">
-            <section className="bg-white p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">3. Configuração do Cálculo</h2>
-               <p className="text-sm text-gray-600 mb-4">
-                Ajuste os parâmetros para o cálculo.
-              </p>
-              <ConfigurationPanel />
-            </section>
-
-            <section className="bg-white p-6 rounded-lg shadow">
-              <h2 className="text-xl font-semibold mb-4">4. Relatório de Auditoria</h2>
-                {isLoading && <p>Calculando...</p>}
-                {error && <p className="text-red-500">Erro: {error}</p>}
-                {reportData ? (
-                  <ReportDisplay reportData={reportData} />
-                ) : (
-                  <p className="text-gray-500">O relatório aparecerá aqui após o cálculo.</p>
-                )}
-            </section>
-          </div>
-
+        {/* Coluna da Esquerda: Inputs */}
+        <div className="space-y-8">
+          <ConfigurationPanel
+            mesAno={mesAno}
+            setMesAno={setMesAno}
+            usarComSabado={usarComSabado}
+            setUsarComSabado={setUsarComSabado}
+          />
+          <PagamentosForm
+            payments={payments}
+            setPayments={setPayments}
+          />
+          <button
+            onClick={handleCalculate}
+            disabled={isLoading || payments.length === 0}
+            className="w-full py-3 px-4 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isLoading ? 'Calculando...' : 'Calcular DSR'}
+          </button>
         </div>
+
+        {/* Coluna da Direita: Relatório */}
+        <div className="space-y-8">
+           <section className="bg-white p-6 rounded-lg shadow-lg">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-700">Relatório de Auditoria</h2>
+              {isLoading && <div className="text-center p-8"><p>Carregando resultado...</p></div>}
+              {error && <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4"><p><b>Erro:</b> {error}</p></div>}
+              {calculationResult ? (
+                <ReportDisplay result={calculationResult} />
+              ) : (
+                !isLoading && !error && <p className="text-gray-500 text-center p-8">O relatório aparecerá aqui após o cálculo.</p>
+              )}
+            </section>
+        </div>
+
       </main>
-
-      <footer className="bg-white mt-12">
-        <div className="container mx-auto px-6 py-4 text-center text-gray-500">
-          <p>&copy; {new Date().getFullYear()} DSR Audit System. Todos os direitos reservados.</p>
-        </div>
-      </footer>
     </div>
   );
 }

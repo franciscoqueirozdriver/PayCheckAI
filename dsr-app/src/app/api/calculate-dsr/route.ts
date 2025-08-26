@@ -1,29 +1,58 @@
 import { NextResponse } from 'next/server';
-import { calculateDSR, DSRCalculationParams } from '@/lib/dsr-calculator';
+import { calcularDSRporPagamento, PaymentRow, DayCounts } from '@/lib/dsr-calculator';
+import { getDayCountsForMonth } from '@/lib/date-helper';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Basic validation to ensure the body contains the necessary parameters
-    if (!body || typeof body.totalCommission !== 'number' || typeof body.workingDays !== 'number' || typeof body.restDays !== 'number') {
-      return NextResponse.json({ error: 'Parâmetros inválidos. Forneça totalCommission, workingDays e restDays.' }, { status: 400 });
+    const payments: PaymentRow[] = body.payments;
+    const mesAno: string = body.mesAno; // e.g., "2024-08"
+    const usarComSabado: boolean = body.usarComSabado;
+
+    // Basic validation
+    if (!Array.isArray(payments) || !mesAno || typeof usarComSabado !== 'boolean') {
+      return NextResponse.json({ error: 'Parâmetros inválidos. Forneça "payments", "mesAno" e "usarComSabado".' }, { status: 400 });
     }
 
-    const params: DSRCalculationParams = {
-      totalCommission: body.totalCommission,
-      workingDays: body.workingDays,
-      restDays: body.restDays,
+    const [year, month] = mesAno.split('-').map(Number);
+    if (!year || !month) {
+        return NextResponse.json({ error: 'Formato de "mesAno" inválido. Use AAAA-MM.' }, { status: 400 });
+    }
+
+    // Automatically get the day counts from our new helper
+    const dayCounts = await getDayCountsForMonth(year, month);
+
+    const dayCountsForCalc: DayCounts = {
+        ...dayCounts,
+        usarComSabado: usarComSabado,
     };
 
-    const result = calculateDSR(params);
+    const results = payments.map(payment => calcularDSRporPagamento(payment, dayCountsForCalc));
 
-    return NextResponse.json(result);
+    // Calculate totals
+    const totals = results.reduce((acc, result) => {
+      acc.totalComissaoBruta += result.comissaoBruta;
+      acc.totalComissaoLiquida += result.comissaoLiquida;
+      acc.totalDsrBruto += result.dsrBruto;
+      acc.totalDsrLiquido += result.dsrLiquido;
+      return acc;
+    }, {
+      totalComissaoBruta: 0,
+      totalComissaoLiquida: 0,
+      totalDsrBruto: 0,
+      totalDsrLiquido: 0,
+    });
+
+    return NextResponse.json({
+      details: results,
+      totals: totals,
+      dayCounts: dayCounts, // Also return the calculated day counts for display on the frontend
+    });
 
   } catch (error) {
     console.error('Erro na API /api/calculate-dsr:', error);
 
-    // Handle JSON parsing errors or other unexpected errors
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: 'Corpo da requisição JSON inválido.' }, { status: 400 });
     }

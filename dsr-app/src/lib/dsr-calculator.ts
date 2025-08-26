@@ -1,60 +1,64 @@
-/**
- * Interface for DSR calculation parameters.
- */
-export interface DSRCalculationParams {
-  totalCommission: number;
-  workingDays: number;
-  restDays: number; // Sundays and holidays
+// Helper function to parse currency strings (e.g., "R$ 1.234,56") into numbers.
+export function parseCurrency(valor: string | number): number {
+  if (typeof valor === 'number') return valor;
+  if (!valor || typeof valor !== 'string') return 0;
+
+  const numeroLimpo = valor
+    .replace(/R\$\s?/, '') // Remove "R$" symbol
+    .replace(/\./g, '')      // Remove thousand separators
+    .replace(',', '.');      // Replace decimal comma with a dot
+
+  return parseFloat(numeroLimpo) || 0;
 }
 
-/**
- * Interface for the result of a DSR calculation.
- */
-export interface DSRCalculationResult {
-  calculatedDSR: number;
-  dailyRate: number;
+// Helper function to format numbers back into Brazilian currency strings.
+export function formatCurrency(valor: number): string {
+  return (valor || 0).toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  });
 }
 
-/**
- * Calculates the Descanso Semanal Remunerado (DSR) on commissions.
- *
- * The calculation is based on the formula:
- * (Total Commission / Working Days) * Rest Days
- *
- * @param params - The parameters for the DSR calculation.
- * @returns An object containing the calculated DSR and the daily rate.
- * @throws {Error} if workingDays is zero to prevent division by zero.
- */
-export function calculateDSR(params: DSRCalculationParams): DSRCalculationResult {
-  const { totalCommission, workingDays, restDays } = params;
+// Interface for a single payment row
+export interface PaymentRow {
+  valor_bruto: string | number;
+  percentual_imposto: string | number;
+  percentual_comissao: string | number;
+}
 
-  if (workingDays <= 0) {
-    // Return 0 or throw an error depending on desired business logic for months with no work
-    return {
-        calculatedDSR: 0,
-        dailyRate: 0,
-    };
-  }
+// Interface for the day counts
+export interface DayCounts {
+  usarComSabado: boolean;
+  diasComSabado: number;
+  diasSemSabado: number;
+  diasDescanso: number;
+}
 
-  const dailyRate = totalCommission / workingDays;
-  const calculatedDSR = dailyRate * restDays;
+// Calculates DSR for a single payment, considering gross vs. net values.
+export function calcularDSRporPagamento(row: PaymentRow, days: DayCounts) {
+  const valorBruto = parseCurrency(row.valor_bruto);
+  const percentualImposto = parseFloat(String(row.percentual_imposto)) || 0;
+  const percentualComissao = parseFloat(String(row.percentual_comissao)) || 0;
+
+  // Calculate net value after tax
+  const liquidoVenda = valorBruto * (1 - percentualImposto / 100);
+
+  // Calculate commission based on both gross and net sale value
+  const comissaoBruta = valorBruto * (percentualComissao / 100);
+  const comissaoLiquida = liquidoVenda * (percentualComissao / 100);
+
+  // Determine the divisor based on whether Saturday is a working day
+  const divisor = days.usarComSabado ? days.diasComSabado : days.diasSemSabado;
+
+  // Calculate DSR on both gross and net commission
+  const dsrBruto = divisor > 0 ? (comissaoBruta / divisor) * days.diasDescanso : 0;
+  const dsrLiquido = divisor > 0 ? (comissaoLiquida / divisor) * days.diasDescanso : 0;
 
   return {
-    calculatedDSR: parseFloat(calculatedDSR.toFixed(2)), // Round to 2 decimal places
-    dailyRate: parseFloat(dailyRate.toFixed(2)),
+    liquidoVenda,
+    comissaoBruta,
+    comissaoLiquida,
+    dsrBruto,
+    dsrLiquido
   };
 }
-
-// Example Usage (can be removed later or kept for testing)
-/*
-const exampleParams: DSRCalculationParams = {
-  totalCommission: 1500.75,
-  workingDays: 22,
-  restDays: 5, // 4 Sundays + 1 Holiday
-};
-
-const result = calculateDSR(exampleParams);
-console.log(`Daily Rate: R$ ${result.dailyRate}`);
-console.log(`Calculated DSR: R$ ${result.calculatedDSR}`);
-// Expected DSR: (1500.75 / 22) * 5 = 341.08
-*/
