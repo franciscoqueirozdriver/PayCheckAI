@@ -1,5 +1,6 @@
 import React from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 export default function SobreDialog() {
   return (
@@ -10,9 +11,9 @@ export default function SobreDialog() {
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-          <Dialog.Title className="text-2xl font-bold mb-2">
-            Sobre a Calculadora de DSR
-          </Dialog.Title>
+          <VisuallyHidden>
+            <Dialog.Title>Sobre a Calculadora de DSR</Dialog.Title>
+          </VisuallyHidden>
           <Dialog.Description className="text-gray-700 mb-4">
             Esta é uma ferramenta para auxiliar no cálculo do Descanso Semanal Remunerado (DSR) sobre comissões de vendas.
           </Dialog.Description>
@@ -29,3 +30,4 @@ export default function SobreDialog() {
     </Dialog.Root>
   );
 }
+
