@@ -1,22 +1,22 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import HeaderStats from '../../components/dsr/HeaderStats';
-import Filters from '../../components/dsr/Filters';
-import GlobalRates from '../../components/dsr/GlobalRates';
-import PaymentsTable from '../../components/dsr/PaymentsTable';
+import HeaderStats from '../components/dsr/HeaderStats';
+import Filters from '../components/dsr/Filters';
+import GlobalRates from '../components/dsr/GlobalRates';
+import PaymentsTable from '../components/dsr/PaymentsTable';
 import {
   Payment,
   BasesSelecionadas,
   AliquotasGlobais,
-} from '../../types/dsr';
+} from '../types/dsr';
 import {
   getMonthDays,
   countSundays,
   countBusinessDays,
   listHolidaysWrapper,
-} from '../../lib/dateUtils';
-import { applyGlobalRatesToRows } from '../../lib/dsr';
+} from '../lib/dateUtils';
+import { applyGlobalRatesToRows } from '../lib/dsr';
 
 const DEFAULT_BASES: BasesSelecionadas = {
   comissaoValorBruto: true,
@@ -108,7 +108,7 @@ const DEFAULT_ROWS: Payment[] = [
   },
 ];
 
-export default function CalcularDSRPage() {
+export default function Page() {
   const [rows, setRows] = useState<Payment[]>([]);
   const [aliquotas, setAliquotas] = useState<AliquotasGlobais>(DEFAULT_ALIQUOTAS);
   const [params, setParams] = useState(DEFAULT_PARAMS);
