@@ -1,0 +1,36 @@
+{
+  "2025": {
+    "3106200": [
+      {
+        "date": "2025-08-15",
+        "name": "Assunção de Nossa Senhora"
+      },
+      {
+        "date": "2025-12-08",
+        "name": "Imaculada Conceição"
+      }
+    ],
+    "3550308": [
+      {
+        "date": "2025-01-25",
+        "name": "Aniversário de São Paulo"
+      },
+      {
+        "date": "2025-11-20",
+        "name": "Dia da Consciência Negra"
+      }
+    ]
+  },
+  "2024": {
+    "3106200": [
+      {
+        "date": "2024-08-15",
+        "name": "Assunção de Nossa Senhora"
+      },
+      {
+        "date": "2024-12-08",
+        "name": "Imaculada Conceição"
+      }
+    ]
+  }
+}

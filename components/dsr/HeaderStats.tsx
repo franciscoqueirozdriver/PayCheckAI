@@ -5,9 +5,9 @@ import React from 'react';
 interface HeaderStatsProps {
   period: string;
   onPeriodChange: (value: string) => void;
-  diasUteisSemSabado: number;
-  diasUteisComSabado: number;
-  diasDescanso: number;
+  diasUteisSemSabado: number | string;
+  diasUteisComSabado: number | string;
+  diasDescanso: number | string;
 }
 
 export default function HeaderStats({
