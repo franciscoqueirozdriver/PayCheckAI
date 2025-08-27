@@ -10,30 +10,21 @@ interface Holiday {
   source: string;
 }
 
-interface BrasilAPIFeriado {
-  date: string;
-  name: string;
-  type: string;
-}
-
-interface NagerDateFeriado {
-  date: string;
-  localName: string;
-  name: string;
-  countryCode: string;
-  fixed: boolean;
-  global: boolean;
-  counties: string[] | null; // e.g., ["BR-SP"]
-  launchYear: number | null;
-  types: string[]; // e.g., ["Public"]
+// New type for the Invertexto API response
+interface InvertextoFeriado {
+    date: string;
+    name: string;
+    type: 'feriado' | 'facultativo';
+    level: 'nacional' | 'estadual';
 }
 
 type MunicipalHolidays = Record<string, Record<string, { date: string; name: string }[]>>;
 
-// Cast the imported JSON to our type
 const municipalHolidays: MunicipalHolidays = municipalHolidaysData;
 
-// Opt out of caching for this route handler. Fetches within are still cached.
+// NOTE: In a real application, this should come from process.env
+const INVERTEXTO_TOKEN = '21402|JipPBIvm1zjnQHUesNshTHnz7UsZAXyA';
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
@@ -49,54 +40,41 @@ export async function GET(request: NextRequest) {
 
   const allHolidays: Holiday[] = [];
   const sources = {
-    national: 'BrasilAPI',
-    state: 'Nager.Date',
+    invertexto: 'invertexto.com',
     municipal: 'local',
   };
 
   try {
-    // --- Fetch External Holidays in Parallel ---
-    const [brasilApiResult, nagerResult] = await Promise.allSettled([
-      fetch(`https://brasilapi.com.br/api/feriados/v1/${year}`, { next: { revalidate: 86400 } }), // 24h cache
-      uf ? fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/BR`, { next: { revalidate: 86400 } }) : Promise.resolve(null),
-    ]);
+    // --- New Fetch Logic for Invertexto API ---
+    let apiUrl = `https://api.invertexto.com/v1/holidays/${year}?token=${INVERTEXTO_TOKEN}`;
+    if (uf) {
+      apiUrl += `&state=${uf.toUpperCase()}`;
+    }
 
-    // 1. National Holidays (BrasilAPI)
-    if (brasilApiResult.status === 'fulfilled' && brasilApiResult.value.ok) {
-      const nationalHolidays: BrasilAPIFeriado[] = await brasilApiResult.value.json();
-      nationalHolidays.forEach(h => {
-        allHolidays.push({
-          date: h.date,
-          name: h.name,
-          type: 'national',
-          scope: 'BR',
-          source: sources.national,
-        });
-      });
+    const invertextoResponse = await fetch(apiUrl, {
+        next: { revalidate: 86400 }, // 24h cache
+    });
+
+    if (invertextoResponse.ok) {
+        const externalHolidays: InvertextoFeriado[] = await invertextoResponse.json();
+
+        externalHolidays
+            .filter(h => h.type === 'feriado') // Only include non-optional holidays
+            .forEach(h => {
+                const isNational = h.level === 'nacional';
+                allHolidays.push({
+                    date: h.date,
+                    name: h.name,
+                    type: isNational ? 'national' : 'state',
+                    scope: isNational ? 'BR' : `BR-${uf?.toUpperCase()}`,
+                    source: sources.invertexto,
+                });
+            });
     } else {
-      console.error('BrasilAPI fetch failed:', brasilApiResult.status === 'rejected' ? brasilApiResult.reason : 'Response not OK');
+        console.error('Invertexto API fetch failed:', await invertextoResponse.text());
     }
 
-    // 2. State Holidays (Nager.Date)
-    if (uf && nagerResult.status === 'fulfilled' && nagerResult.value && nagerResult.value.ok) {
-      const nagerHolidays: NagerDateFeriado[] = await nagerResult.value.json();
-      const stateScope = `BR-${uf.toUpperCase()}`;
-      nagerHolidays.forEach(h => {
-        if (h.counties && h.counties.includes(stateScope)) {
-          allHolidays.push({
-            date: h.date,
-            name: h.name,
-            type: 'state',
-            scope: stateScope,
-            source: sources.state,
-          });
-        }
-      });
-    } else if (uf) {
-      console.error('Nager.Date fetch failed:', nagerResult.status === 'rejected' ? nagerResult.reason : 'Response not OK');
-    }
-
-    // 3. Municipal Holidays (Local JSON)
+    // --- Municipal Holiday Logic (Unchanged) ---
     if (includeMunicipal && ibge && municipalHolidays[year] && municipalHolidays[year][ibge]) {
       const holidays = municipalHolidays[year][ibge];
       holidays.forEach(h => {
@@ -110,7 +88,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 4. Deduplication & Sorting
+    // --- Deduplication & Sorting (Unchanged) ---
     const uniqueHolidays = new Map<string, Holiday>();
     allHolidays.forEach(h => {
       const key = `${h.date}|${h.type}|${h.scope}`;
