@@ -37,6 +37,8 @@ export default function PaymentsTable({
   const showDSRBr = bases.dsrValorBruto;
   const showDSRLiq = bases.dsrValorLiquido;
 
+  let totalValorBruto = 0;
+  let totalLiquido = 0;
   let totalComBr = 0;
   let totalComLiq = 0;
   let totalDSRBr = 0;
@@ -85,6 +87,9 @@ export default function PaymentsTable({
               const dsrBr = calcDSR(comBr, diasDescanso, diasUteisDivisor);
               const dsrLiq = calcDSR(comLiq, diasDescanso, diasUteisDivisor);
 
+              // Increment totals
+              totalValorBruto += row.valorBruto;
+              totalLiquido += liquido;
               if (showComBr) totalComBr += comBr;
               if (showComLiq) totalComLiq += comLiq;
               if (showDSRBr) totalDSRBr += dsrBr;
@@ -148,7 +153,11 @@ export default function PaymentsTable({
           </tbody>
           <tfoot className="bg-muted/50 border-t-2 border-border">
             <tr className="font-semibold">
-              <td className={`${thStyle} text-right`} colSpan={8}>Totais</td>
+              <td className={`${thStyle} text-right`} colSpan={4}>Totais</td>
+              <td className={tdNumericStyle}>{formatCurrencyBR(totalValorBruto)}</td>
+              <td className={tdStyle}></td>
+              <td className={tdNumericStyle}>{formatCurrencyBR(totalLiquido)}</td>
+              <td className={tdStyle}></td>
               {showComBr && <td className={tdNumericStyle}>{formatCurrencyBR(totalComBr)}</td>}
               {showComLiq && <td className={tdNumericStyle}>{formatCurrencyBR(totalComLiq)}</td>}
               {showDSRBr && <td className={tdNumericStyle}>{formatCurrencyBR(totalDSRBr)}</td>}
