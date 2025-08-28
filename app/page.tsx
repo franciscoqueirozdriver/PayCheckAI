@@ -143,6 +143,12 @@ const [isInitialized, setIsInitialized] = useState(false);
     ? diasUteisComSabado
     : diasUteisSemSabado;
 
+  // Filter rows based on the selected period
+  const filteredRows = useMemo(() => {
+    if (!params.period || !rows) return [];
+    return rows.filter(row => row.dataPagamento && row.dataPagamento.startsWith(params.period));
+  }, [rows, params.period]);
+
   // --- Handlers are mostly unchanged ---
   const handlePeriodChange = (value: string) => setParams((p) => ({ ...p, period: value }));
   const handleAddRow = () => {
@@ -196,7 +202,7 @@ const [isInitialized, setIsInitialized] = useState(false);
         onApply={handleApplyRates}
       />
       <PaymentsTable
-        rows={rows}
+        rows={filteredRows}
         onAdd={handleAddRow}
         onRemove={handleRowRemove}
         onChange={handleRowChange}
