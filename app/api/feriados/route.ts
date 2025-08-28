@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import municipalHolidaysData from '@/src/lib/paycheckai/municipal.json';
+import municipalHolidaysData from '@/lib/municipal.json';
 
 // --- Type Definitions ---
 interface Holiday {

@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     if (considerarFeriados) {
       // Internal fetch to our own API
       const baseUrl = request.nextUrl.origin;
-      const feriadosUrl = new URL('/api/paycheckai/feriados', baseUrl);
+      const feriadosUrl = new URL('/api/feriados', baseUrl);
       feriadosUrl.searchParams.set('year', yearStr);
       if (uf) feriadosUrl.searchParams.set('uf', uf);
       if (ibge) feriadosUrl.searchParams.set('ibge', ibge);
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         const data = await feriadosResponse.json();
         holidays = data.holidays || [];
       } else {
-        console.error(`Internal fetch to /api/paycheckai/feriados failed: ${feriadosResponse.status}`);
+        console.error(`Internal fetch to /api/feriados failed: ${feriadosResponse.status}`);
         // Gracefully degrade: continue calculation without holidays
       }
     }

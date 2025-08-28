@@ -1,5 +1,5 @@
 // Funções puras de cálculo de DSR e formatação
-import { Payment } from '@/src/types/paycheckai';
+import { Payment } from '../types/dsr';
 
 export function calcLiquido(valorBruto: number, percImposto: number): number {
   return valorBruto * (1 - percImposto / 100);
