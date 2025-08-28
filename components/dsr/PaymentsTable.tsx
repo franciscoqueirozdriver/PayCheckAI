@@ -7,6 +7,8 @@ import {
   calcComissao,
   calcDSR,
   formatCurrencyBR,
+  parseCurrencyBRL,
+  formatNumberBRL,
 } from '../../lib/dsr';
 
 interface PaymentsTableProps {
@@ -107,7 +109,16 @@ export default function PaymentsTable({
                     <input type="text" value={row.parcela} onChange={(e) => onChange(row.id, 'parcela', e.target.value)} className={`${inputStyle} w-24`} placeholder="Ex: 1 de 6"/>
                   </td>
                   <td className={tdNumericStyle}>
-                    <input type="number" value={row.valorBruto} onChange={(e) => onChange(row.id, 'valorBruto', Number(e.target.value))} className={`${inputStyle} text-right`} />
+                    <input
+                      type="text"
+                      value={formatNumberBRL(row.valorBruto)}
+                      onChange={(e) => {
+                        const numericValue = parseCurrencyBRL(e.target.value);
+                        onChange(row.id, 'valorBruto', numericValue);
+                      }}
+                      className={`${inputStyle} text-right`}
+                      placeholder="0,00"
+                    />
                   </td>
                   <td className={tdNumericStyle}>
                     <input type="number" value={row.percImposto} disabled={locked} onChange={(e) => onChange(row.id, 'percImposto', Number(e.target.value))} className={`${inputStyle} w-20 text-right`} />
