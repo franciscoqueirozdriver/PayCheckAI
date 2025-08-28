@@ -58,6 +58,7 @@ export default function Page() {
   const [aliquotas, setAliquotas] = useState<AliquotasGlobais>(DEFAULT_ALIQUOTAS);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [bases, setBases] = useState<BasesSelecionadas>(DEFAULT_BASES);
+const [isInitialized, setIsInitialized] = useState(false);
 
   // --- New state for API data ---
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
@@ -68,27 +69,36 @@ export default function Page() {
     const storedRows = localStorage.getItem('dsr_lancamentos');
     const storedAliq = localStorage.getItem('dsr_aliquotas_globais');
     const storedParams = localStorage.getItem('dsr_parametros');
-    if (storedRows) setRows(JSON.parse(storedRows));
-    else setRows(DEFAULT_ROWS);
+    if (storedRows) {
+      setRows(JSON.parse(storedRows));
+    } else {
+      setRows(DEFAULT_ROWS);
+    }
     if (storedAliq) setAliquotas(JSON.parse(storedAliq));
     if (storedParams) {
       const parsed = JSON.parse(storedParams);
       setParams({ ...DEFAULT_PARAMS, ...parsed });
       setBases(parsed.bases || DEFAULT_BASES);
     }
+    setIsInitialized(true); // Signal that initial loading is done
   }, []);
 
-  // Persist state to localStorage (unchanged)
-  useEffect(() => { localStorage.setItem('dsr_lancamentos', JSON.stringify(rows)); }, [rows]);
+  // Persist state to localStorage
+  useEffect(() => {
+    if (isInitialized) {
+      localStorage.setItem('dsr_lancamentos', JSON.stringify(rows));
+    }
+  }, [rows, isInitialized]);
   useEffect(() => { localStorage.setItem('dsr_aliquotas_globais', JSON.stringify(aliquotas)); }, [aliquotas]);
   useEffect(() => { localStorage.setItem('dsr_parametros', JSON.stringify({ ...params, bases })); }, [params, bases]);
 
-  // Apply global rates when locked (unchanged)
+  // Apply global rates when locked
   useEffect(() => {
-    if (aliquotas.locked) {
+    // Only apply after initial data is loaded to avoid race condition
+    if (aliquotas.locked && isInitialized) {
       setRows((prev) => applyGlobalRatesToRows(prev, aliquotas));
     }
-  }, [aliquotas.imposto, aliquotas.comissao, aliquotas.locked]);
+  }, [aliquotas.imposto, aliquotas.comissao, aliquotas.locked, isInitialized]);
 
   // --- NEW: Fetch calendar data from API ---
   useEffect(() => {
