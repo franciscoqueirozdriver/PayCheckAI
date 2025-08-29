@@ -26,7 +26,14 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
 
 async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   const pre = await preprocessForOCR(buffer);
-  const { data: { text } } = await Tesseract.recognize(pre, 'por+eng', { tessedit_pageseg_mode: 1 });
+  const { data: { text } } = await Tesseract.recognize(
+    pre,
+    'por+eng',
+    {
+      psm: 3,
+      logger: m => console.debug('[tesseract]', m),
+    }
+  );
   return text;
 }
 
