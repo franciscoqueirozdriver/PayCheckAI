@@ -27,11 +27,13 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
 export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   const pre = await preprocessForOCR(buffer);
 
-  const worker = await Tesseract.createWorker({
-    logger: m => {
+  // Logger global (compatível com as tipagens atuais)
+  if (process.env.NODE_ENV !== 'production') {
+    Tesseract.setLogger(m => {
       // console.debug('[tesseract]', m);
-    },
-  });
+    });
+  }
+  const worker = await Tesseract.createWorker();
 
   try {
     await worker.loadLanguage('por+eng');
