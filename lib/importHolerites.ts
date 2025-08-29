@@ -4,7 +4,7 @@ import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import { extractTextFromPdf, parseRubricas, normalizeCurrency, normalizeDate } from './holeriteParser';
 import { HoleriteRow, ImportOptions, ImportResult, RubricaEntry } from '../types/holerite';
 import { createHash } from 'crypto';
-import base32Encode from 'hi-base32';
+import * as base32 from 'hi-base32';
 
 const SHEET_TITLE = 'Holerite';
 const HEADER = [
@@ -18,7 +18,7 @@ function ensureHeader(sheet: any) {
 
 function generateId(company: string, cnpj: string, colaborador: string, mes: string, fonte: string): string {
   const hash = createHash('sha256').update(`${company}|${cnpj}|${colaborador}|${mes}|${fonte}`).digest();
-  return base32Encode(hash).replace(/=+$/,'').slice(0,16);
+  return base32.encode(hash).replace(/=+$/,'').slice(0,16);
 }
 
 function monthNameToNumber(name: string): string | null {
