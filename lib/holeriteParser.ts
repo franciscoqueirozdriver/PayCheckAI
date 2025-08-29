@@ -1,7 +1,7 @@
 import pdfParse from 'pdf-parse';
 import * as fs from 'fs/promises';
 import { createWorker, type Worker as TesseractWorker } from 'tesseract.js';
-import { ocrLog, ocrLogEnabled } from './ocrLogger';
+import { ocrLog } from './ocrLogger';
 import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
@@ -34,10 +34,7 @@ export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   const worker: TesseractWorker = await createWorker();
 
   try {
-    ocrLog('worker:loadLanguage:start', 'por+eng');
-    await worker.loadLanguage('por+eng');
-    ocrLog('worker:loadLanguage:done');
-
+    // initialize também carrega os idiomas necessários
     ocrLog('worker:initialize:start', 'por+eng');
     await worker.initialize('por+eng');
     ocrLog('worker:initialize:done');
