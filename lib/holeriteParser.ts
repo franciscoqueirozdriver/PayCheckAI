@@ -1,6 +1,7 @@
 import pdfParse from 'pdf-parse';
 import * as fs from 'fs/promises';
-import Tesseract from 'tesseract.js';
+import { createWorker } from 'tesseract.js';
+import { ocrLog, ocrLogEnabled } from './ocrLogger';
 import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
@@ -25,28 +26,35 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
 }
 
 export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
+  ocrLog('preprocess:start');
   const pre = await preprocessForOCR(buffer);
+  ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
 
-  // Logger global (compatível com as tipagens atuais)
-  if (process.env.NODE_ENV !== 'production') {
-    Tesseract.setLogger(m => {
-      // console.debug('[tesseract]', m);
-    });
-  }
-  const worker = await Tesseract.createWorker();
+  // Cria o worker sem opções (compatível com tipagens)
+  const worker = await createWorker();
 
   try {
+    ocrLog('worker:loadLanguage:start', 'por+eng');
     await worker.loadLanguage('por+eng');
+    ocrLog('worker:loadLanguage:done');
+
+    ocrLog('worker:initialize:start', 'por+eng');
     await worker.initialize('por+eng');
+    ocrLog('worker:initialize:done');
 
-    await worker.setParameters({
-      tessedit_pageseg_mode: process.env.TESS_PSM ?? '3',
-    });
+    // 3 = AUTO
+    ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: '3' });
+    await worker.setParameters({ tessedit_pageseg_mode: '3' });
+    ocrLog('worker:setParameters:done');
 
+    ocrLog('worker:recognize:start');
     const { data: { text } } = await worker.recognize(pre);
+    ocrLog('worker:recognize:done', { chars: text?.length ?? 0 });
     return text || '';
   } finally {
+    ocrLog('worker:terminate:start');
     await worker.terminate();
+    ocrLog('worker:terminate:done');
   }
 }
 
