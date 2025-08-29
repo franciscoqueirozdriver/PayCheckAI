@@ -88,6 +88,37 @@ export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'v
   return cleanText(texts.join('\n'));
 }
 
+// Variant of extractTextFromPdf that accepts a Buffer instead of a file path.
+// This is useful for API routes where the PDF is uploaded via multipart form data
+// and not saved to disk. The logic mirrors extractTextFromPdf above.
+export async function extractTextFromPdfBuffer(buffer: Buffer, ocrEngine: 'tesseract'|'vision'='tesseract'): Promise<string> {
+  let text = '';
+  try {
+    text = await extractPdfText(buffer);
+  } catch {
+    text = '';
+  }
+  if (text.trim().length > 40) {
+    return cleanText(text);
+  }
+  const pages = await pdfToImages(buffer);
+  const texts: string[] = [];
+  for (const img of pages) {
+    let pageText = '';
+    if (ocrEngine === 'vision') {
+      try {
+        pageText = await ocrWithVision(img);
+      } catch {
+        pageText = await ocrWithTesseract(img);
+      }
+    } else {
+      pageText = await ocrWithTesseract(img);
+    }
+    texts.push(pageText);
+  }
+  return cleanText(texts.join('\n'));
+}
+
 function cleanText(t: string): string {
   return t.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
 }
