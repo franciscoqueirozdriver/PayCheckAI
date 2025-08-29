@@ -1,19 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-
-export type Candidate = string | number;
-export type Rubrica = { codigo?: string; descricao: string; quantidade?: string; valor_provento?: string; valor_desconto?: string };
-export type HoleriteDraft = {
-  id_holerite?: string;
-  mes?: string; competencia?: string; empresa?: string; cnpj_empresa?: string;
-  colaborador?: string; cpf_colaborador?: string; matricula?: string; cargo?: string; departamento?: string;
-  salario_base?: string; comissao?: string; dsr?: string; dias_dsr?: string;
-  valor_bruto?: string; valor_liquido?: string; data_pagamento?: string; user_email?: string;
-  fonte_arquivo?: string; holerite_id?: string; rubricas_json?: string; status_validacao?: string;
-  total_proventos?: string; total_descontos?: string; base_inss?: string; base_fgts?: string; base_irrf?: string; fgts_mes?: string;
-};
-export type CandidatesMap = Partial<Record<keyof HoleriteDraft, Candidate[]>>;
+import type { HoleriteDraft, CandidatesMap } from '@/models/holerite';
+import { Dropbox } from './Dropbox';
 
 interface Props {
   open: boolean;
@@ -60,12 +49,10 @@ const FIELDS: { key: keyof HoleriteDraft; label: string; textarea?: boolean }[] 
 ];
 
 export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, totalItems, pdfFile, extracted, candidates, onSave, onPrev, onNext }: Props) {
-  const [data, setData] = useState<HoleriteDraft>(extracted);
+  const [form, setForm] = useState<HoleriteDraft>(extracted);
   const [pdfUrl, setPdfUrl] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
-    setData(extracted);
-  }, [extracted]);
+  useEffect(() => { setForm(extracted); }, [extracted]);
 
   useEffect(() => {
     if (pdfFile) {
@@ -77,13 +64,13 @@ export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, to
 
   if (!open) return null;
 
-  const handleChange = (key: keyof HoleriteDraft, value: string) => {
-    setData(prev => ({ ...prev, [key]: value }));
-  };
+  function setField<K extends keyof HoleriteDraft>(key: K, value: string) {
+    setForm(prev => ({ ...prev, [key]: value }));
+  }
 
-  const handleSave = async () => {
-    await onSave(data);
-  };
+  async function handleSave() {
+    await onSave(form);
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -96,35 +83,26 @@ export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, to
               <div className="text-sm text-gray-500">Sem preview</div>
             )}
           </div>
-          <div className="w-1/2 pl-2 h-full overflow-auto">
+          <div className="w-1/2 pl-2 h-full overflow-auto space-y-3">
             {FIELDS.map(f => (
-              <div key={f.key as string} className="mb-3">
-                <label className="block text-sm font-medium mb-1">{f.label}</label>
-                {f.textarea ? (
-                  <textarea
-                    value={data[f.key] || ''}
-                    onChange={e => handleChange(f.key, e.target.value)}
-                    className="w-full border rounded p-2 text-sm"
-                    rows={4}
-                  />
+              <div key={f.key as string}>
+                {f.key === 'rubricas_json' ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">{f.label}</div>
+                    <textarea
+                      value={form[f.key] || ''}
+                      onChange={e => setField(f.key, e.target.value)}
+                      className="w-full border rounded p-2 text-sm"
+                      rows={4}
+                    />
+                  </div>
                 ) : (
-                  <input
-                    value={data[f.key] || ''}
-                    onChange={e => handleChange(f.key, e.target.value)}
-                    className="w-full border rounded p-2 text-sm"
+                  <Dropbox
+                    label={f.label}
+                    value={form[f.key] || ''}
+                    candidates={candidates?.[f.key]}
+                    onChange={v => setField(f.key, v)}
                   />
-                )}
-                {candidates && candidates[f.key] && (
-                  <select
-                    onChange={e => handleChange(f.key, e.target.value)}
-                    className="mt-1 w-full border rounded p-1 text-sm"
-                    value={data[f.key] || ''}
-                  >
-                    <option value="">--Selecionar--</option>
-                    {candidates[f.key]!.map(c => (
-                      <option key={String(c)} value={String(c)}>{String(c)}</option>
-                    ))}
-                  </select>
                 )}
               </div>
             ))}

@@ -11,7 +11,8 @@ import {
   AliquotasGlobais,
 } from '../types/dsr';
 import { applyGlobalRatesToRows } from '../lib/dsr';
-import HoleriteReviewDialog, { HoleriteDraft, CandidatesMap } from '../components/HoleriteReviewDialog';
+import HoleriteReviewDialog from '../components/HoleriteReviewDialog';
+import type { HoleriteDraft, CandidatesMap, ImportPreview } from '@/models/holerite';
 
 // --- Type definition for the new API response ---
 interface CalendarData {
@@ -63,8 +64,8 @@ export default function Page() {
   // --- Holerite import states ---
   const [files, setFiles] = useState<FileList | null>(null);
   const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates?: CandidatesMap }>>([]);
-  const [reviewOpen, setReviewOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
+  const [openReview, setOpenReview] = useState(false);
   const [results, setResults] = useState<Array<{ empresa?: string; mes?: string; valor_liquido?: string; status_validacao?: string }>>([]);
   const [summary, setSummary] = useState<{ imported: number; updated: number; pendentes: number }>({ imported: 0, updated: 0, pendentes: 0 });
 
@@ -73,16 +74,21 @@ export default function Page() {
     setFiles(e.target.files);
   };
 
+  async function onImport(filesArr: File[], userEmail?: string) {
+    const fd = new FormData();
+    filesArr.forEach(f => fd.append('files', f));
+    if (userEmail) fd.append('user_email', userEmail);
+    const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
+    const previews: ImportPreview[] = await res.json();
+    const merged = previews.map((p, i) => ({ file: filesArr[i], extracted: p.extracted, candidates: p.candidates ?? {} }));
+    setItems(merged);
+    setCursor(0);
+    setOpenReview(true);
+  }
+
   const handleImport = async () => {
     if (!files || files.length === 0) return;
-    const fd = new FormData();
-    Array.from(files).forEach(f => fd.append('files', f));
-    const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
-    const data = await res.json();
-    const arr = data.map((d: any, i: number) => ({ file: files[i], extracted: d.extracted as HoleriteDraft, candidates: d.candidates as CandidatesMap }));
-    setItems(arr);
-    setReviewOpen(true);
-    setCursor(0);
+    await onImport(Array.from(files));
   };
 
   const handleSave = async (finalData: HoleriteDraft) => {
@@ -98,7 +104,7 @@ export default function Page() {
       if (cursor < items.length - 1) {
         setCursor(c => c + 1);
       } else {
-        setReviewOpen(false);
+        setOpenReview(false);
         setFiles(null);
         setItems([]);
       }
@@ -286,8 +292,8 @@ export default function Page() {
       <button className="fixed right-4 bottom-4 bg-gray-700 text-white p-3 rounded-full">⚙️</button>
     </main>
     <HoleriteReviewDialog
-      open={reviewOpen}
-      onOpenChange={setReviewOpen}
+      open={openReview}
+      onOpenChange={setOpenReview}
       itemIndex={cursor}
       totalItems={items.length}
       pdfFile={items[cursor]?.file}
