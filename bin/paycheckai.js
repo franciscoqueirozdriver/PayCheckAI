@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 require('ts-node/register');
+const fs = require('fs');
+
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  const path = '/tmp/gcv.json';
+  fs.writeFileSync(path, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON, 'utf8');
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = path;
+}
 const { importHolerites } = require('../lib/importHolerites');
 const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');

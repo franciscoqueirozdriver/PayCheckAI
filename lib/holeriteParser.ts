@@ -3,8 +3,20 @@ import * as fs from 'fs/promises';
 import { fromBuffer } from 'pdf-img-convert';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
-import { ImageAnnotatorClient } from '@google-cloud/vision';
 import { RubricaEntry } from '../types/holerite';
+
+async function ocrWithTesseract(buffer: Buffer): Promise<string> {
+  const pre = await sharp(buffer).grayscale().threshold(150).toBuffer();
+  const { data: { text } } = await Tesseract.recognize(pre, 'por+eng', { tessedit_pageseg_mode: 1 });
+  return text;
+}
+
+export async function ocrWithVision(buffer: Buffer): Promise<string> {
+  const { ImageAnnotatorClient } = await import('@google-cloud/vision');
+  const client = new ImageAnnotatorClient();
+  const [result] = await client.textDetection({ image: { content: buffer } });
+  return result?.fullTextAnnotation?.text ?? '';
+}
 
 // Extract text from PDF (native or scanned)
 export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'vision'='tesseract'): Promise<string> {
@@ -23,18 +35,18 @@ export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'v
   // Fallback to OCR
   const pages = await fromBuffer(buffer, { width: 2000 });
   const texts: string[] = [];
-  if (ocrEngine === 'vision') {
-    const client = new ImageAnnotatorClient();
-    for (const img of pages) {
-      const [result] = await client.textDetection({ image: { content: img } });
-      texts.push(result.fullTextAnnotation?.text || '');
+  for (const img of pages) {
+    let pageText = '';
+    if (ocrEngine === 'vision') {
+      try {
+        pageText = await ocrWithVision(img);
+      } catch {
+        pageText = await ocrWithTesseract(img);
+      }
+    } else {
+      pageText = await ocrWithTesseract(img);
     }
-  } else {
-    for (const img of pages) {
-      const pre = await sharp(img).grayscale().threshold(150).toBuffer();
-      const { data: { text: t } } = await Tesseract.recognize(pre, 'por+eng', { tessedit_pageseg_mode: 1 });
-      texts.push(t);
-    }
+    texts.push(pageText);
   }
   return cleanText(texts.join('\n'));
 }

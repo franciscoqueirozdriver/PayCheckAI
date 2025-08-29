@@ -22,7 +22,7 @@
     "yargs": "^17.7.2",
     "hi-base32": "^0.5.1",
     "sharp": "^0.33.2",
-    "@google-cloud/vision": "^3.2.0",
+    "@google-cloud/vision": "^4.3.0",
     "pdf-img-convert": "^1.2.0"
   },
   "devDependencies": {
