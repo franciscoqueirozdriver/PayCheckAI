@@ -1,7 +1,7 @@
 import pdfParse from 'pdf-parse';
 import * as fs from 'fs/promises';
-import { createWorker, type Worker as TesseractWorker } from 'tesseract.js';
-import { ocrLog } from './ocrLogger';
+import Tesseract, { createWorker } from 'tesseract.js';
+import { ocrLog, ocrLogEnabled } from './ocrLogger';
 import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
@@ -30,15 +30,15 @@ export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   const pre = await preprocessForOCR(buffer);
   ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
 
-  // Cria o worker sem opções (compatível com tipagens)
-  const worker: TesseractWorker = await createWorker();
+  if (ocrLogEnabled()) {
+    Tesseract.setLogger(m => console.debug('[tesseract]', m));
+  }
+
+  ocrLog('worker:create:start', 'por+eng');
+  const worker = await createWorker('por+eng');
+  ocrLog('worker:create:done');
 
   try {
-    // initialize também carrega os idiomas necessários
-    ocrLog('worker:initialize:start', 'por+eng');
-    await worker.initialize('por+eng');
-    ocrLog('worker:initialize:done');
-
     // 3 = AUTO
     ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: '3' });
     await worker.setParameters({ tessedit_pageseg_mode: '3' });
