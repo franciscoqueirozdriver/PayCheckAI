@@ -11,7 +11,8 @@ import {
   AliquotasGlobais,
 } from '../types/dsr';
 import { applyGlobalRatesToRows } from '../lib/dsr';
-import HoleriteReviewDialog, { HoleriteDraft, CandidatesMap } from '../components/HoleriteReviewDialog';
+import HoleriteReviewDialog from '../components/HoleriteReviewDialog';
+import { HoleriteDraft, CandidatesMap } from '@/types/holerite';
 
 // --- Type definition for the new API response ---
 interface CalendarData {

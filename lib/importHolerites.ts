@@ -2,9 +2,96 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { GoogleSpreadsheetRow } from 'google-spreadsheet';
 import { extractTextFromPdf, parseRubricas, normalizeCurrency, normalizeDate } from './holeriteParser';
-import { HoleriteRow, ImportOptions, ImportResult, RubricaEntry } from '../types/holerite';
+import { HoleriteRow, ImportOptions, ImportResult, RubricaEntry, HoleriteDraft, CandidatesMap } from '../types/holerite';
 import { createHash } from 'crypto';
 import * as base32 from 'hi-base32';
+
+function matchAll(text: string, regex: RegExp, index: number = 1): string[] {
+  const globalRegex = new RegExp(regex.source, 'gi');
+  const matches = Array.from(text.matchAll(globalRegex));
+  const unique = new Set(matches.map(m => m[index].trim()));
+  return Array.from(unique).filter(Boolean);
+}
+
+export function processHoleriteText(text: string, options: { userEmail?: string, fonte: string }): { extracted: HoleriteDraft, candidates: CandidatesMap } {
+    const candidates: CandidatesMap = {};
+    const extracted: HoleriteDraft = {};
+
+    const addField = (key: keyof HoleriteDraft, regex: RegExp, group: number = 1, formatter?: (val: string) => string) => {
+        const all = matchAll(text, regex, group);
+        const formatted = formatter ? all.map(formatter) : all;
+        candidates[key] = Array.from(new Set(formatted)).filter(Boolean);
+        extracted[key] = candidates[key]?.[0] || '';
+    };
+
+    addField('empresa', /empresa[:\s]*([\w .-]+)/i);
+    addField('cnpj_empresa', /cnpj[:\s]*([0-9\.\/-]+)/i, 1, formatCnpj);
+    addField('colaborador', /(colaborador|empregado|funcion\w+)[:\s]*([\w .-]+)/i, 2);
+    addField('cpf_colaborador', /cpf[:\s]*([0-9\.\/-]+)/i, 1, formatCpf);
+    addField('matricula', /matr[ií]cula[:\s]*([\w.-]+)/i);
+    addField('cargo', /cargo[:\s]*([\w .-]+)/i);
+    addField('departamento', /departamento[:\s]*([\w .-]+)/i);
+    addField('data_pagamento', /pagamento[:\s]*([0-9\/]+)/i, 1, normalizeDate);
+    addField('holerite_id', /holerite\s*[:#]?\s*(\w+)/i);
+
+    // Mês/Competência is special
+    const mesMatches = Array.from(text.matchAll(/folha\s*mensal\s*(\w+)\s*(\d{4})/gi));
+    if (mesMatches.length > 0) {
+      const mesCandidates = mesMatches.map(m => {
+          const monthNum = monthNameToNumber(m[1]);
+          return monthNum ? `${m[2]}-${monthNum}` : '';
+      }).filter(Boolean);
+      const competenciaCandidates = mesMatches.map(m => `${m[1]} de ${m[2]}`);
+      candidates['mes'] = Array.from(new Set(mesCandidates));
+      candidates['competencia'] = Array.from(new Set(competenciaCandidates));
+      extracted.mes = candidates.mes[0] || '';
+      extracted.competencia = candidates.competencia[0] || '';
+    }
+
+    const rubricas = parseRubricas(text);
+    extracted.rubricas_json = JSON.stringify(rubricas, null, 2);
+
+    // Numeric fields from rubricas
+    extracted.salario_base = String(findValue(rubricas, /sal[aá]rio/i));
+    extracted.comissao = String(sumValues(rubricas, /comiss/i));
+    const dsrRubricas = rubricas.filter(r => /dsr|repouso/i.test(r.descricao));
+    const dsr = dsrRubricas.reduce((s,r)=> s + (r.valor_provento||0) - (r.valor_desconto||0),0);
+    extracted.dsr = String(dsr);
+    extracted.dias_dsr = dsrRubricas[0]?.quantidade || '';
+
+    const totalProventos = rubricas.reduce((s,r)=> s + (r.valor_provento||0),0);
+    const totalDescontos = rubricas.reduce((s,r)=> s + (r.valor_desconto||0),0);
+    extracted.total_proventos = String(totalProventos);
+    extracted.total_descontos = String(totalDescontos);
+    extracted.valor_bruto = String(totalProventos);
+    extracted.valor_liquido = String(Math.max(totalProventos - totalDescontos, 0));
+
+    // Numeric fields from text (bases) - with candidates
+    const addNumericField = (key: keyof HoleriteDraft, regex: RegExp) => {
+        const all = matchAll(text, regex).map(v => String(normalizeCurrency(v)));
+        candidates[key] = Array.from(new Set(all));
+        extracted[key] = candidates[key]?.[0] || '0';
+    };
+    addNumericField('base_inss', /base\s+inss\s*[:\s]*([0-9.,]+)/i);
+    addNumericField('base_fgts', /base\s+fgts\s*[:\s]*([0-9.,]+)/i);
+    addNumericField('base_irrf', /base\s+irrf\s*[:\s]*([0-9.,]+)/i);
+    addNumericField('fgts_mes', /fgts\s+do\s+m[eê]s\s*[:\s]*([0-9.,]+)/i);
+
+    // Other fields
+    extracted.user_email = options.userEmail || '';
+    extracted.fonte_arquivo = options.fonte;
+
+    const id = generateId(extracted.empresa || '', extracted.cnpj_empresa || '', extracted.colaborador || '', extracted.mes || '', options.fonte);
+    extracted.id_holerite = id;
+    if (!extracted.holerite_id) {
+        extracted.holerite_id = id;
+    }
+
+    const statusOk = extracted.empresa && extracted.cnpj_empresa && extracted.colaborador && extracted.cpf_colaborador && extracted.mes && parseFloat(extracted.total_proventos || '0')>0 && parseFloat(extracted.total_descontos || '0')>=0 && parseFloat(extracted.valor_liquido || '0')>=0;
+    extracted.status_validacao = statusOk ? 'ok' : 'pendente';
+
+    return { extracted, candidates };
+}
 
 const SHEET_TITLE = 'Holerite';
 const HEADER = [
