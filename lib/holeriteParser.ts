@@ -1,4 +1,3 @@
-import pdfParse from 'pdf-parse';
 import * as fs from 'fs/promises';
 import { createWorker, PSM } from 'tesseract.js';
 import { ocrLog, ocrLogEnabled } from './ocrLogger';
@@ -6,6 +5,7 @@ import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
 export async function extractPdfText(buffer: Buffer): Promise<string> {
+  const pdfParse = (await import('pdf-parse')).default;
   const data = await pdfParse(buffer);
   return data.text || '';
 }
