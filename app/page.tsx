@@ -63,7 +63,7 @@ export default function Page() {
 
   // --- Holerite import states ---
   const [files, setFiles] = useState<FileList | null>(null);
-  const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates?: CandidatesMap }>>([]);
+  const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates: CandidatesMap }>>([]);
   const [cursor, setCursor] = useState(0);
   const [openReview, setOpenReview] = useState(false);
   const [results, setResults] = useState<Array<{ empresa?: string; mes?: string; valor_liquido?: string; status_validacao?: string }>>([]);
@@ -80,7 +80,11 @@ export default function Page() {
     if (userEmail) fd.append('user_email', userEmail);
     const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
     const previews: ImportPreview[] = await res.json();
-    const merged = previews.map((p, i) => ({ file: filesArr[i], extracted: p.extracted, candidates: p.candidates ?? {} }));
+    const merged = previews.map((p, i) => ({
+      file: filesArr[i],
+      extracted: p.extracted,
+      candidates: p.candidates || {},
+    }));
     setItems(merged);
     setCursor(0);
     setOpenReview(true);
@@ -298,7 +302,7 @@ export default function Page() {
       totalItems={items.length}
       pdfFile={items[cursor]?.file}
       extracted={items[cursor]?.extracted || {}}
-      candidates={items[cursor]?.candidates}
+      candidates={items[cursor]?.candidates || {}}
       onSave={handleSave}
       onPrev={() => setCursor(c => Math.max(0, c - 1))}
       onNext={() => setCursor(c => Math.min(items.length - 1, c + 1))}

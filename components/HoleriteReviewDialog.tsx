@@ -11,7 +11,7 @@ interface Props {
   totalItems: number;
   pdfFile?: File;
   extracted: HoleriteDraft;
-  candidates?: CandidatesMap;
+  candidates: CandidatesMap;
   onSave: (finalData: HoleriteDraft) => Promise<void>;
   onPrev: () => void;
   onNext: () => void;
@@ -52,7 +52,7 @@ export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, to
   const [form, setForm] = useState<HoleriteDraft>(extracted);
   const [pdfUrl, setPdfUrl] = useState<string | undefined>(undefined);
 
-  useEffect(() => { setForm(extracted); }, [extracted]);
+  useEffect(() => { setForm(extracted ?? {}); }, [extracted, itemIndex]);
 
   useEffect(() => {
     if (pdfFile) {
@@ -100,7 +100,7 @@ export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, to
                   <Dropbox
                     label={f.label}
                     value={form[f.key] || ''}
-                    candidates={candidates?.[f.key]}
+                    candidates={candidates[f.key]}
                     onChange={v => setField(f.key, v)}
                   />
                 )}

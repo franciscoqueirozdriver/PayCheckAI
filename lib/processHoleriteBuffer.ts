@@ -11,12 +11,27 @@ function monthNameToNumber(name: string): string | null {
   return map[key] || null;
 }
 
-export async function processHoleriteBuffer(buffer: Buffer, opts: { userEmail?: string; filename: string }): Promise<{ extracted: HoleriteDraft; candidates: CandidatesMap }> {
+export async function processHoleriteBuffer(
+  buffer: Buffer,
+  opts: { userEmail?: string; filename: string }
+): Promise<{ extracted: HoleriteDraft; candidates: CandidatesMap }> {
   const text = await extractTextFromPdfBuffer(buffer);
   const row = extractFields(text, { userEmail: opts.userEmail, fonte: opts.filename });
-  const extracted: HoleriteDraft = {};
-  Object.entries(row).forEach(([k,v]) => {
-    (extracted as any)[k] = typeof v === 'number' ? String(v) : (v || '');
+
+  const base: HoleriteDraft = {
+    empresa: '',
+    cnpj_empresa: '',
+    colaborador: '',
+    cpf_colaborador: '',
+    mes: '',
+    valor_liquido: '',
+    total_proventos: '',
+    total_descontos: '',
+  };
+
+  Object.entries(row).forEach(([k, v]) => {
+    const key = k.replace(/([A-Z])/g, '_$1').toLowerCase() as keyof HoleriteDraft;
+    (base as any)[key] = typeof v === 'number' ? String(v) : (v || '');
   });
 
   const candidates: CandidatesMap = {};
@@ -26,20 +41,23 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { userEmail?: 
     if (uniq.length) candidates[field] = uniq;
   };
 
-  add('empresa', Array.from(text.matchAll(/empresa[:\s]*([\w .-]+)/gi)).map(m=>m[1].trim()));
-  add('cnpj_empresa', Array.from(text.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)).map(m=>m[0]));
-  add('colaborador', Array.from(text.matchAll(/colaborador[:\s]*([\w .-]+)/gi)).map(m=>m[1].trim()));
-  add('cpf_colaborador', Array.from(text.matchAll(/\d{3}\.\d{3}\.\d{3}-\d{2}/g)).map(m=>m[0]));
-  add('matricula', Array.from(text.matchAll(/matr[ií]cula[:\s]*([\w.-]+)/gi)).map(m=>m[1].trim()));
-  add('cargo', Array.from(text.matchAll(/cargo[:\s]*([\w .-]+)/gi)).map(m=>m[1].trim()));
-  add('departamento', Array.from(text.matchAll(/departamento[:\s]*([\w .-]+)/gi)).map(m=>m[1].trim()));
-  add('data_pagamento', Array.from(text.matchAll(/pagamento[:\s]*([0-9\/]+)/gi)).map(m=>m[1].trim()));
+  add('empresa', Array.from(text.matchAll(/empresa[:\s]*([\w .-]+)/gi)).map(m => m[1].trim()));
+  add('cnpj_empresa', Array.from(text.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)).map(m => m[0]));
+  add('colaborador', Array.from(text.matchAll(/colaborador[:\s]*([\w .-]+)/gi)).map(m => m[1].trim()));
+  add('cpf_colaborador', Array.from(text.matchAll(/\d{3}\.\d{3}\.\d{3}-\d{2}/g)).map(m => m[0]));
+  add('matricula', Array.from(text.matchAll(/matr[ií]cula[:\s]*([\w.-]+)/gi)).map(m => m[1].trim()));
+  add('cargo', Array.from(text.matchAll(/cargo[:\s]*([\w .-]+)/gi)).map(m => m[1].trim()));
+  add('departamento', Array.from(text.matchAll(/departamento[:\s]*([\w .-]+)/gi)).map(m => m[1].trim()));
+  add('data_pagamento', Array.from(text.matchAll(/pagamento[:\s]*([0-9\/]+)/gi)).map(m => m[1].trim()));
 
-  const mesMatches = Array.from(text.matchAll(/(?:folha\s*mensal|mes)\s*(\w+)\s*(\d{4})/gi)).map(m=>{
-    const mnum = monthNameToNumber(m[1]);
-    return mnum ? `${m[2]}-${mnum}` : '';
-  }).filter(Boolean);
-  add('mes', mesMatches);
+  const explicitMonths = Array.from(text.matchAll(/\b20\d{2}[-\/](0[1-9]|1[0-2])\b/g)).map(m => m[0].replace('/', '-'));
+  const nameMonths = Array.from(text.matchAll(/(?:folha\s*mensal|mes)\s*(\w+)\s*(\d{4})/gi))
+    .map(m => {
+      const mnum = monthNameToNumber(m[1]);
+      return mnum ? `${m[2]}-${mnum}` : '';
+    })
+    .filter(Boolean);
+  add('mes', [...explicitMonths, ...nameMonths]);
 
-  return { extracted, candidates };
+  return { extracted: base, candidates };
 }
