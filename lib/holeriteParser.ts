@@ -1,12 +1,31 @@
 import pdfParse from 'pdf-parse';
 import * as fs from 'fs/promises';
-import { fromBuffer } from 'pdf-img-convert';
 import Tesseract from 'tesseract.js';
 import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
+export async function extractPdfText(buffer: Buffer): Promise<string> {
+  const data = await pdfParse(buffer);
+  return data.text || '';
+}
+
+export async function preprocessForOCR(input: Buffer): Promise<Buffer> {
+  return sharp(input).grayscale().normalize().toBuffer();
+}
+
+async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
+  const first = sharp(buffer, { density: 300 });
+  const { pages = 1 } = await first.metadata();
+  const imgs: Buffer[] = [];
+  for (let i = 0; i < pages; i++) {
+    const img = await sharp(buffer, { density: 300, page: i }).png().toBuffer();
+    imgs.push(img);
+  }
+  return imgs;
+}
+
 async function ocrWithTesseract(buffer: Buffer): Promise<string> {
-  const pre = await sharp(buffer).grayscale().threshold(150).toBuffer();
+  const pre = await preprocessForOCR(buffer);
   const { data: { text } } = await Tesseract.recognize(pre, 'por+eng', { tessedit_pageseg_mode: 1 });
   return text;
 }
@@ -23,17 +42,14 @@ export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'v
   const buffer = await fs.readFile(file);
   let text = '';
   try {
-    const data = await pdfParse(buffer);
-    text = data.text || '';
-  } catch (err) {
-    // ignore and fallback to OCR
+    text = await extractPdfText(buffer);
+  } catch {
     text = '';
   }
   if (text.trim().length > 40) {
     return cleanText(text);
   }
-  // Fallback to OCR
-  const pages = await fromBuffer(buffer, { width: 2000 });
+  const pages = await pdfToImages(buffer);
   const texts: string[] = [];
   for (const img of pages) {
     let pageText = '';
