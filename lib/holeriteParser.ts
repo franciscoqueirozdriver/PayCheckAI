@@ -24,17 +24,28 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
   return imgs;
 }
 
-async function ocrWithTesseract(buffer: Buffer): Promise<string> {
+export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   const pre = await preprocessForOCR(buffer);
-  const { data: { text } } = await Tesseract.recognize(
-    pre,
-    'por+eng',
-    {
-      psm: 3,
-      logger: m => console.debug('[tesseract]', m),
-    }
-  );
-  return text;
+
+  const worker = await Tesseract.createWorker({
+    logger: m => {
+      // console.debug('[tesseract]', m);
+    },
+  });
+
+  try {
+    await worker.loadLanguage('por+eng');
+    await worker.initialize('por+eng');
+
+    await worker.setParameters({
+      tessedit_pageseg_mode: process.env.TESS_PSM ?? '3',
+    });
+
+    const { data: { text } } = await worker.recognize(pre);
+    return text || '';
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function ocrWithVision(buffer: Buffer): Promise<string> {
