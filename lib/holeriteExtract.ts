@@ -441,15 +441,29 @@ function extractTablesFromTextract(blocks: Block[]): Rubrica[] {
   for (const table of tables) {
     const rel = table.Relationships?.find((r) => r.Type === "CHILD");
     if (!rel?.Ids) continue;
-    // detectar cabeçalho
-    const rows = rel.Ids.map((id) => idToBlock.get(id!)).filter((b) => b?.BlockType === "ROW") as Block[];
-    if (!rows.length) continue;
 
-    const matrix: string[][] = rows.map((row) => {
-      const cellsRel = row.Relationships?.find((r) => r.Type === "CHILD");
-      const cells = (cellsRel?.Ids || []).map((id) => idToBlock.get(id!)).filter((b) => b?.BlockType === "CELL") as Block[];
-      return cells.map((c) => getText(c));
-    });
+    // Todos os blocos CELL pertencentes à tabela
+    const cells = rel.Ids
+      .map((id) => idToBlock.get(id!))
+      .filter((b) => b?.BlockType === "CELL") as Block[];
+    if (!cells.length) continue;
+
+    // Agrupar células por índice de linha para formar uma matriz ordenada
+    const rowsMap: Record<number, Block[]> = {};
+    for (const cell of cells) {
+      const rIdx = cell.RowIndex ?? 0;
+      rowsMap[rIdx] = rowsMap[rIdx] || [];
+      rowsMap[rIdx].push(cell);
+    }
+
+    const matrix: string[][] = Object.keys(rowsMap)
+      .map(Number)
+      .sort((a, b) => a - b)
+      .map((r) =>
+        rowsMap[r]
+          .sort((a, b) => (a.ColumnIndex || 0) - (b.ColumnIndex || 0))
+          .map((c) => getText(c))
+      );
 
     if (!matrix.length) continue;
 
