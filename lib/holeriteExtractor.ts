@@ -81,9 +81,8 @@ function findItem(lines: string[], itemLabel: string) {
     if (U.includes(L)) {
       let values: number[] = [];
       for (let j = i; j <= i + 3 && j < lines.length; j++) {
-        const found = [...lines[j].matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)].map((m) =>
-          toBRNumber(m[1]) as number
-        );
+        const matches = lines[j].match(/(\d{1,3}(?:\.\d{3})*,\d{2})/g) || [];
+        const found = matches.map((m) => toBRNumber(m) as number);
         values.push(...found);
       }
       if (values.length >= 2)
