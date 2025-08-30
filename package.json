@@ -19,15 +19,13 @@
     "google-auth-library": "^10.3.0",
     "google-spreadsheet": "^5.0.2",
     "hi-base32": "^0.5.1",
-    "lodash": "^4.17.21",
     "next": "14.1.0",
     "pdf-parse": "^1.1.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "sharp": "^0.33.2",
     "tesseract.js": "^5.0.5",
-    "yargs": "^17.7.2",
-    "@tesseract.js/node": "^5.0.5"
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "20.11.19",
