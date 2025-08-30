@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { extractHoleriteData } from '@/lib/textractExtractor';
+import { getTextFromPdf } from '@/lib/holeriteParser';
+import { extractDataWithRegex } from '@/lib/regexExtractor';
 
 export async function POST(req: Request) {
   const formData = await req.formData();
@@ -8,19 +9,21 @@ export async function POST(req: Request) {
 
   for (const file of files) {
     if (!(file instanceof File)) continue;
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+
     try {
-      const data = await extractHoleriteData(buffer, file.name);
-      results.push({ ...data, filename: file.name });
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const text = await getTextFromPdf(buffer);
+
+      if (!text) {
+        throw new Error("Failed to extract any text from the document.");
+      }
+
+      const extractedData = extractDataWithRegex(text);
+      results.push({ filename: file.name, data: extractedData });
+
     } catch (err:any) {
-      console.error(`Fatal error processing file ${file.name}:`, err);
-      results.push({
-          filename: file.name,
-          extracted: { status_validacao: 'falha_inesperada' },
-          candidates: {},
-          error: err.message
-      });
+      console.error(`Error processing file ${file.name}:`, err);
+      results.push({ filename: file.name, error: err.message });
     }
   }
 

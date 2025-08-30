@@ -1,25 +1,18 @@
-export type HoleriteDraft = {
-  id_holerite?: string;
-  mes?: string; competencia?: string; empresa?: string; cnpj_empresa?: string;
-  colaborador?: string; cpf_colaborador?: string; matricula?: string; cargo?: string; departamento?: string;
-  salario_base?: string; comissao?: string; dsr?: string; dias_dsr?: string;
-  valor_bruto?: string; valor_liquido?: string; data_pagamento?: string; user_email?: string;
-  fonte_arquivo?: string; holerite_id?: string; rubricas_json?: string; status_validacao?: string;
-  total_proventos?: string; total_descontos?: string; base_inss?: string; base_fgts?: string; base_irrf?: string; fgts_mes?: string;
-};
+// A minimal set of types to support the new extraction script.
+// This can be expanded as we build the new extractor.
 
-export type CandidatesMap = Partial<Record<keyof HoleriteDraft, string[]>>;
-
-export type ImportPreview = {
-  extracted: HoleriteDraft;
-  candidates?: CandidatesMap;
-  filename: string;
-};
-
-export interface RubricaEntry {
-  codigo: string;
-  descricao: string;
-  quantidade?: string;
-  valor_provento?: number;
-  valor_desconto?: number;
+export interface Holerite {
+    nomeFuncionario: string | null;
+    cargo: string | null;
+    periodo: string | null;
+    totalVencimentos: number | null;
+    totalDescontos: number | null;
+    valorLiquido: number | null;
+    detalhes: Array<{
+        codigo: string;
+        descricao: string;
+        referencia: string | null;
+        vencimentos: number | null;
+        descontos: number | null;
+    }>;
 }
