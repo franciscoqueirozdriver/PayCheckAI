@@ -1,4 +1,5 @@
-import { extractTextFromPdfBuffer, parseRubricas } from './holeriteParser';
+import { extractPdfText, extractTextFromPdfBuffer, parseRubricas } from './holeriteParser';
+import { runTextract } from './textract';
 import type { HoleriteDraft, CandidatesMap } from '@/models/holerite';
 import { createHash } from 'crypto';
 import * as base32 from 'hi-base32';
@@ -46,12 +47,73 @@ function generateId(company: string, cnpj: string, colaborador: string, mes: str
   return base32.encode(hash).replace(/=+$/,'').slice(0,16);
 }
 
-export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: string; userEmail?: string }): Promise<{ extracted: HoleriteDraft; candidates: CandidatesMap }> {
-  const raw = await extractTextFromPdfBuffer(buffer);
-  const text = normalizeTextBR(raw);
-  const lines = text.split('\n');
+function normalizeKey(s: string): string {
+  return s.normalize('NFD').replace(/[^a-z0-9 ]/gi,'').toLowerCase();
+}
 
-  // Empresa
+function fromKV(kv: Record<string,string>, keys: string[]): string {
+  const map: Record<string,string> = {};
+  for (const [k,v] of Object.entries(kv)) map[normalizeKey(k)] = v;
+  for (const k of keys) {
+    const norm = normalizeKey(k);
+    for (const [kk,vv] of Object.entries(map)) {
+      if (kk.includes(norm)) return vv;
+    }
+  }
+  return '';
+}
+
+function parseRubricasFromTables(tables: string[][][]): ReturnType<typeof parseRubricas> {
+  for (const table of tables) {
+    if (!table.length) continue;
+    const header = table[0].map(h=>normalizeKey(h));
+    const codIdx = header.findIndex(h=>/cod/.test(h));
+    const descIdx = header.findIndex(h=>/desc/.test(h));
+    const refIdx = header.findIndex(h=>/ref|quant/.test(h));
+    const provIdx = header.findIndex(h=>/venc|provent/.test(h));
+    const descVIdx = header.findIndex(h=>/desc|descont/.test(h));
+    if (codIdx === -1 || descIdx === -1) continue;
+    const out: ReturnType<typeof parseRubricas> = [];
+    for (const row of table.slice(1)) {
+      const codigo = row[codIdx];
+      if (!codigo) continue;
+      out.push({
+        codigo,
+        descricao: row[descIdx] || '',
+        quantidade: row[refIdx] || '',
+        valor_provento: toBRNumber(row[provIdx]),
+        valor_desconto: toBRNumber(row[descVIdx])
+      });
+    }
+    if (out.length) return out;
+  }
+  return [];
+}
+
+export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: string; userEmail?: string }): Promise<{ extracted: HoleriteDraft; candidates: CandidatesMap }> {
+  // quick attempt with pdf-parse
+  let text = '';
+  try { text = await extractPdfText(buffer); } catch {}
+  text = normalizeTextBR(text);
+  const goodPdf = /CNPJ/i.test(text) && /(L[íi]quido|Liquido)/i.test(text);
+
+  let kv: Record<string,string> = {};
+  let tables: string[][][] = [];
+
+  if (!goodPdf) {
+    try {
+      const tex = await runTextract(buffer, opts.filename);
+      text = normalizeTextBR(tex.text || '');
+      kv = tex.kv;
+      tables = tex.tables;
+    } catch {
+      const fallback = await extractTextFromPdfBuffer(buffer);
+      text = normalizeTextBR(fallback);
+    }
+  }
+
+  // parse using text (and tables/kv when available)
+  const lines = text.split('\n');
   const empresaCandidates: string[] = [];
   for (let i=0;i<lines.length;i++) {
     if (/CNPJ[:\s]/i.test(lines[i])) {
@@ -64,30 +126,32 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
       }
     }
   }
+  const empresaKV = fromKV(kv, ['empresa']);
+  if (empresaKV) empresaCandidates.unshift(empresaKV);
   const empresa = empresaCandidates[0] || '';
 
-  // CNPJ / CPF
   const cnpjMatches = Array.from(text.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)).map(m=>m[0]);
+  const cnpjKV = fromKV(kv, ['cnpj']);
+  if (cnpjKV) cnpjMatches.unshift(cnpjKV);
   const cnpj_empresa = cnpjMatches[0] || '';
 
   const cpfMatches = Array.from(text.matchAll(/\d{3}\.\d{3}\.\d{3}-\d{2}/g)).map(m=>m[0]);
+  const cpfKV = fromKV(kv, ['cpf']);
+  if (cpfKV) cpfMatches.unshift(cpfKV);
   const cpf_colaborador = cpfMatches[0] || '';
 
-  // Colaborador
   const colaboradorMatches: string[] = [];
   const colRegex = /(FUNCION[ÁA]RIO|EMPREGADO|COLABORADOR)\s*[:\-]?\s*([A-ZÁ-Ú ]{3,})/gi;
   let colM: RegExpExecArray | null;
-  while ((colM = colRegex.exec(text))) {
-    colaboradorMatches.push(colM[2].trim());
-  }
+  while ((colM = colRegex.exec(text))) colaboradorMatches.push(colM[2].trim());
+  const colKV = fromKV(kv, ['funcionário','empregado','colaborador','nome']);
+  if (colKV) colaboradorMatches.unshift(colKV);
   const colaborador = colaboradorMatches[0] || '';
 
-  // Matricula / Cargo / Departamento
-  const matricula = Array.from(text.matchAll(/Matr[ií]cula\s*[:\-]?\s*([A-Z0-9\-\.\/]+)/gi)).map(m=>m[1].trim())[0] || '';
-  const cargo = Array.from(text.matchAll(/Cargo\s*[:\-]\s*([^\n]+)/gi)).map(m=>m[1].trim())[0] || '';
-  const departamento = Array.from(text.matchAll(/(?:Depto\.?|Departamento)\s*[:\-]\s*([^\n]+)/gi)).map(m=>m[1].trim())[0] || '';
+  const matricula = fromKV(kv, ['matr']);
+  const cargo = fromKV(kv, ['cargo']);
+  const departamento = fromKV(kv, ['departamento','depto']);
 
-  // Mes / Competencia
   const mesIsoCandidates: string[] = [];
   const mesTextoCandidates: string[] = [];
   const monthRegex = /(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)\s+de\s+(20\d{2})/gi;
@@ -99,37 +163,43 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
       mesTextoCandidates.push(`${mm[1][0].toUpperCase()}${mm[1].slice(1).toLowerCase()} de ${mm[2]}`);
     }
   }
+  const compKV = fromKV(kv, ['competência','folha mensal','mês']);
+  if (compKV) {
+    const m = monthRegex.exec(compKV);
+    if (m) {
+      const num = monthNameToNumber(m[1]);
+      if (num) {
+        mesIsoCandidates.unshift(`${m[2]}-${num}`);
+        mesTextoCandidates.unshift(`${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} de ${m[2]}`);
+      }
+    }
+  }
   const mes = mesIsoCandidates[0] || '';
   const competencia = mesTextoCandidates[0] || '';
 
-  // Datas pagamento
   const dateMatches = Array.from(text.matchAll(/\d{2}\/\d{2}\/\d{4}/g)).map(m=>m[0]);
+  const dateKV = fromKV(kv, ['pagamento','vencimento']);
+  if (dateKV) dateMatches.unshift(dateKV);
   const data_pagamento = toISODate(dateMatches[0]);
   const dataPagtoCandidates = uniq(dateMatches.map(toISODate));
 
-  // Rubricas
-  const rubricas = parseRubricas(text);
+  let rubricas = tables.length ? parseRubricasFromTables(tables) : [];
+  if (!rubricas.length) rubricas = parseRubricas(text);
   const rubricas_json = JSON.stringify(rubricas);
   const totalProventosNum = rubricas.reduce((s,r)=>s+(r.valor_provento||0),0);
   const totalDescontosNum = rubricas.reduce((s,r)=>s+(r.valor_desconto||0),0);
   const valorLiquidoNum = totalProventosNum - totalDescontosNum;
-  const salarioBaseRub = rubricas.find(r=>/SAL[ÁA]RIO/.test(r.descricao));
+  const salarioBaseRub = rubricas.find(r=>/SAL[ÁA]RIO\s*BASE/i.test(r.descricao));
   const salarioBaseNum = salarioBaseRub ? (salarioBaseRub.valor_provento||0) - (salarioBaseRub.valor_desconto||0) : 0;
-  const comissaoNum = rubricas.filter(r=>/COMISS/i.test(r.descricao)).reduce((s,r)=>s+(r.valor_provento||0)-(r.valor_desconto||0),0);
+  const comissaoNum = rubricas.filter(r=>/COMISS(ÃO|AO)?/i.test(r.descricao)).reduce((s,r)=>s+(r.valor_provento||0)-(r.valor_desconto||0),0);
   const dsrRub = rubricas.filter(r=>/\bDSR\b|DESCANSO SEMANAL REMUNERADO|REP\.\s*REM/i.test(r.descricao));
   const dsrNum = dsrRub.reduce((s,r)=>s+(r.valor_provento||0)-(r.valor_desconto||0),0);
   const diasDsr = dsrRub[0]?.quantidade || '';
 
-  // Bases
-  const baseInssMatches = Array.from(text.matchAll(/base\s+inss\s*[:\s]*([0-9.,]+)/gi)).map(m=>m[1]);
-  const baseFgtsMatches = Array.from(text.matchAll(/base\s+fgts\s*[:\s]*([0-9.,]+)/gi)).map(m=>m[1]);
-  const baseIrrfMatches = Array.from(text.matchAll(/base\s+irrf\s*[:\s]*([0-9.,]+)/gi)).map(m=>m[1]);
-  const fgtsMesMatches = Array.from(text.matchAll(/fgts\s+do\s+m[eê]s\s*[:\s]*([0-9.,]+)/gi)).map(m=>m[1]);
-
-  const base_inss_num = toBRNumber(baseInssMatches[0]);
-  const base_fgts_num = toBRNumber(baseFgtsMatches[0]);
-  const base_irrf_num = toBRNumber(baseIrrfMatches[0]);
-  const fgts_mes_num = toBRNumber(fgtsMesMatches[0]);
+  const base_inss_num = toBRNumber(fromKV(kv,['base inss']) || '');
+  const base_fgts_num = toBRNumber(fromKV(kv,['base fgts']) || '');
+  const base_irrf_num = toBRNumber(fromKV(kv,['base irrf']) || '');
+  const fgts_mes_num = toBRNumber(fromKV(kv,['fgts mês','fgts mes']) || '');
 
   const extracted: HoleriteDraft = {
     id_holerite: '',
@@ -151,7 +221,7 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
     data_pagamento,
     user_email: opts.userEmail || '',
     fonte_arquivo: opts.filename,
-    holerite_id: Array.from(text.matchAll(/holerite\s*[:#]?\s*(\w+)/i)).map(m=>m[1])[0] || '',
+    holerite_id: fromKV(kv,['holerite']) || '',
     rubricas_json,
     status_validacao: '',
     total_proventos: toMoneyStr(totalProventosNum),
@@ -168,24 +238,24 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
   extracted.status_validacao = critical.every(Boolean) ? 'ok' : 'pendente';
 
   const candidates: CandidatesMap = {
-    empresa: uniq(empresaCandidates),
-    cnpj_empresa: uniq(cnpjMatches),
-    colaborador: uniq(colaboradorMatches),
-    cpf_colaborador: uniq(cpfMatches),
+    empresa: uniq([empresaKV, ...empresaCandidates]),
+    cnpj_empresa: uniq([cnpjKV, ...cnpjMatches]),
+    colaborador: uniq([colKV, ...colaboradorMatches]),
+    cpf_colaborador: uniq([cpfKV, ...cpfMatches]),
     mes: uniq(mesIsoCandidates),
     competencia: uniq(mesTextoCandidates),
     data_pagamento: dataPagtoCandidates,
     salario_base: uniq([toMoneyStr(salarioBaseNum)]),
-    comissao: uniq([toMoneyStr(comissaoNum), ...rubricas.filter(r=>/COMISS/i.test(r.descricao)).map(r=>toMoneyStr((r.valor_provento||0)-(r.valor_desconto||0)))]),
+    comissao: uniq([toMoneyStr(comissaoNum), ...rubricas.filter(r=>/COMISS(ÃO|AO)?/i.test(r.descricao)).map(r=>toMoneyStr((r.valor_provento||0)-(r.valor_desconto||0)))]),
     dsr: uniq([toMoneyStr(dsrNum)]),
     dias_dsr: uniq(dsrRub.map(r=>r.quantidade).filter(Boolean) as string[]),
     total_proventos: uniq([toMoneyStr(totalProventosNum)]),
     total_descontos: uniq([toMoneyStr(totalDescontosNum)]),
     valor_liquido: uniq([toMoneyStr(valorLiquidoNum)]),
-    base_inss: uniq(baseInssMatches.map(v=>toMoneyStr(toBRNumber(v)))),
-    base_fgts: uniq(baseFgtsMatches.map(v=>toMoneyStr(toBRNumber(v)))),
-    base_irrf: uniq(baseIrrfMatches.map(v=>toMoneyStr(toBRNumber(v)))),
-    fgts_mes: uniq(fgtsMesMatches.map(v=>toMoneyStr(toBRNumber(v)))),
+    base_inss: uniq([toMoneyStr(base_inss_num)]),
+    base_fgts: uniq([toMoneyStr(base_fgts_num)]),
+    base_irrf: uniq([toMoneyStr(base_irrf_num)]),
+    fgts_mes: uniq([toMoneyStr(fgts_mes_num)]),
   };
 
   return { extracted, candidates };
