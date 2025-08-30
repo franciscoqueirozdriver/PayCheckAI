@@ -76,8 +76,17 @@ export default function Page() {
     const fd = new FormData();
     filesArr.forEach(f => fd.append('files', f));
     if (userEmail) fd.append('user_email', userEmail);
-    const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
-    const previews: ImportPreview[] = await res.json();
+    let previews: ImportPreview[] = [];
+    try {
+      const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      previews = await res.json();
+    } catch (err) {
+      console.error('Falha ao importar holerites', err);
+      throw err;
+    }
     const merged = previews.map((p, i) => ({
       file: filesArr[i],
       extracted: p.extracted,
@@ -95,8 +104,13 @@ export default function Page() {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const arr = Array.from(e.target.files ?? []);
     if (!arr.length) return;
-    await onImport(arr);
-    e.target.value = '';
+    try {
+      await onImport(arr);
+    } catch {
+      alert('Falha ao processar os arquivos');
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const handleSave = async (finalData: HoleriteDraft) => {
