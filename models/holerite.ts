@@ -8,7 +8,7 @@ export type HoleriteDraft = {
   total_proventos?: string; total_descontos?: string; base_inss?: string; base_fgts?: string; base_irrf?: string; fgts_mes?: string;
 };
 
-export type CandidatesMap = Partial<Record<keyof HoleriteDraft, Array<string>>>;
+export type CandidatesMap = Partial<Record<keyof HoleriteDraft, string[]>>;
 
 export type ImportPreview = {
   extracted: HoleriteDraft;
