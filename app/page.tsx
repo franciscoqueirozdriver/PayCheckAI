@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import HeaderStats from '../components/dsr/HeaderStats';
 import Filters from '../components/dsr/Filters';
 import GlobalRates from '../components/dsr/GlobalRates';
@@ -13,6 +13,7 @@ import {
 import { applyGlobalRatesToRows } from '../lib/dsr';
 import HoleriteReviewDialog from '../components/HoleriteReviewDialog';
 import type { HoleriteDraft, CandidatesMap, ImportPreview } from '@/models/holerite';
+import { Button } from '@/components/ui/button';
 
 // --- Type definition for the new API response ---
 interface CalendarData {
@@ -62,18 +63,15 @@ export default function Page() {
   const [bases, setBases] = useState<BasesSelecionadas>(DEFAULT_BASES);
 
   // --- Holerite import states ---
-  const [files, setFiles] = useState<FileList | null>(null);
   const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates: CandidatesMap }>>([]);
   const [cursor, setCursor] = useState(0);
   const [openReview, setOpenReview] = useState(false);
   const [results, setResults] = useState<Array<{ empresa?: string; mes?: string; valor_liquido?: string; status_validacao?: string }>>([]);
   const [summary, setSummary] = useState<{ imported: number; updated: number; pendentes: number }>({ imported: 0, updated: 0, pendentes: 0 });
 
-  // --- Holerite handlers ---
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFiles(e.target.files);
-  };
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- Holerite handlers ---
   async function onImport(filesArr: File[], userEmail?: string) {
     const fd = new FormData();
     filesArr.forEach(f => fd.append('files', f));
@@ -90,9 +88,15 @@ export default function Page() {
     setOpenReview(true);
   }
 
-  const handleImport = async () => {
-    if (!files || files.length === 0) return;
-    await onImport(Array.from(files));
+  const handleButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arr = Array.from(e.target.files ?? []);
+    if (!arr.length) return;
+    await onImport(arr);
+    e.target.value = '';
   };
 
   const handleSave = async (finalData: HoleriteDraft) => {
@@ -109,7 +113,6 @@ export default function Page() {
         setCursor(c => c + 1);
       } else {
         setOpenReview(false);
-        setFiles(null);
         setItems([]);
       }
     } else {
@@ -222,14 +225,15 @@ export default function Page() {
     <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
       <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
         <h2 className="text-xl font-bold mb-4">Importar Holerites</h2>
-        <input type="file" accept="application/pdf" multiple onChange={handleFileChange} />
-        <button
-          className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50"
-          disabled={!files || files.length === 0}
-          onClick={handleImport}
-        >
-          Importar
-        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <Button onClick={handleButtonClick}>Importar</Button>
       </section>
 
       {results.length > 0 && (
