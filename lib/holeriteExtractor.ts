@@ -120,7 +120,7 @@ async function ocrPdfToText(pdfPath: string): Promise<string> {
     throw new Error('Falha ao converter PDF para imagem. Instale poppler-utils.');
   }
   const { createWorker } = await import('tesseract.js');
-  const worker = await createWorker();
+  const worker: any = await createWorker();
   await worker.loadLanguage('por');
   await worker.initialize('por');
   const {
