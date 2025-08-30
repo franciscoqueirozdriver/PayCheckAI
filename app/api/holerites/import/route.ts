@@ -12,12 +12,12 @@ const COLS = [
 ] as const;
 type ColKey = typeof COLS[number];
 
+const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 function normalizeKeys(obj: Record<string, any>): Record<ColKey, string> {
   const out = {} as Record<ColKey, string>;
   for (const k of COLS) {
-    const camel = k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-    const v = obj?.[k] ?? obj?.[camel] ?? '';
-    out[k] = typeof v === 'string' ? v : v == null ? '' : String(v);
+    const v = obj?.[k] ?? obj?.[toCamel(k)] ?? '';
+    out[k] = v == null ? '' : String(v);
   }
   return out;
 }
@@ -31,20 +31,14 @@ export async function POST(req: Request) {
   for (const f of files) {
     if (!(f instanceof File)) continue;
     const buf = Buffer.from(await f.arrayBuffer());
-    try {
-      const parsed = await processHoleriteBuffer(buf, { userEmail, filename: f.name });
-      const extracted = normalizeKeys(parsed?.extracted ?? {});
-      const candidates = {} as Record<ColKey, string[]>;
-      for (const k of COLS) {
-        const arr = parsed?.candidates?.[k] ?? parsed?.candidates?.[k.replace(/_([a-z])/g, (_, c) => c.toUpperCase())];
-        candidates[k] = Array.isArray(arr) ? arr.map(x => String(x)) : [];
-      }
-      results.push({ extracted, candidates, filename: f.name });
-    } catch {
-      const extracted = normalizeKeys({});
-      const candidates = COLS.reduce((acc, k) => ({ ...acc, [k]: [] as string[] }), {} as Record<ColKey, string[]>);
-      results.push({ extracted, candidates, filename: f.name });
+    const parsed = await processHoleriteBuffer(buf, { filename: f.name, userEmail });
+    const extracted = normalizeKeys(parsed?.extracted ?? {});
+    const candidates = {} as Record<ColKey, string[]>;
+    for (const k of COLS) {
+      const arr = parsed?.candidates?.[k] ?? parsed?.candidates?.[toCamel(k)];
+      candidates[k] = Array.isArray(arr) ? arr.map(String) : [];
     }
+    results.push({ extracted, candidates, filename: f.name });
   }
 
   return NextResponse.json(results, { status: 200 });
