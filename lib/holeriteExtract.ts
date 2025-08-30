@@ -1,7 +1,8 @@
 // lib/holeriteExtract.ts
-import PdfParse from "pdf-parse";
 import type { AnalyzeDocumentCommandOutput, Block } from "@aws-sdk/client-textract";
 import { TextractClient, AnalyzeDocumentCommand } from "@aws-sdk/client-textract";
+// pdf-parse is dynamically imported to avoid issues during build time
+let pdfParse: any;
 
 // =========================
 // Tipos de saída
@@ -513,7 +514,10 @@ function extractTablesFromTextract(blocks: Block[]): Rubrica[] {
 export async function extractHolerite(buffer: Buffer): Promise<HoleriteOut> {
   // 1) Tentar PDF texto
   try {
-    const parsed = await PdfParse(buffer);
+    if (!pdfParse) {
+      pdfParse = (await import("pdf-parse")).default;
+    }
+    const parsed = await pdfParse(buffer);
     const basic = normText(parsed.text || "");
 
     if (basic && /(CNPJ|Vencimentos|L[ií]quido|Folha\s+Mensal)/i.test(basic)) {
