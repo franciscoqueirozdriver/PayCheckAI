@@ -300,7 +300,7 @@ export default function Page() {
       onOpenChange={setOpenReview}
       itemIndex={cursor}
       totalItems={items.length}
-      pdfFile={items[cursor]?.file}
+      file={items[cursor]?.file}
       extracted={items[cursor]?.extracted || {}}
       candidates={items[cursor]?.candidates || {}}
       onSave={handleSave}
