@@ -74,27 +74,21 @@ export default function Page() {
   const [items, setItems] = useState<Item[]>([]);
   const [open, setOpen] = useState(false);
   const [idx, setIdx] = useState(0);
+  const [rawTextData, setRawTextData] = useState<any>(null);
 
   // New Holerite handlers
   async function handleImport(input: HTMLInputElement) {
     const files = Array.from(input.files || []);
     if (!files.length) return;
 
+    setRawTextData('Extraindo texto...');
     const fd = new FormData();
     files.forEach(f => fd.append("files", f));
 
     const res = await fetch("/api/holerites/import", { method: "POST", body: fd });
-    const previews: Array<{ extracted: HoleriteDraft; candidates?: CandidatesMap; filename: string }> = await res.json();
+    const results = await res.json();
+    setRawTextData(results);
 
-    const merged: Item[] = previews.map((p, i) => ({
-      file: files[i],
-      extracted: p.extracted || {},
-      candidates: p.candidates || {}
-    }));
-
-    setItems(merged);
-    setIdx(0);
-    setOpen(true);
     input.value = ""; // limpa seleção
   }
 
@@ -227,6 +221,14 @@ export default function Page() {
             <Button onClick={() => document.getElementById("uploader")?.click()}>Importar holerites</Button>
         </div>
       </section>
+
+      {rawTextData && (
+        <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
+            <h2 className="text-xl font-bold mb-4">Passo 1: Texto Extraído</h2>
+            <p className="text-sm text-muted-foreground mb-4">O texto abaixo foi extraído do seu PDF. Por favor, verifique se ele corresponde ao conteúdo do arquivo. Se estiver correto, podemos prosseguir para a próxima etapa de identificação dos campos.</p>
+            <div className="text-xs bg-gray-100 p-4 rounded-md overflow-auto max-h-96">{JSON.stringify(rawTextData, null, 2)}</div>
+        </section>
+      )}
 
       {/* DSR Components */}
       <HeaderStats

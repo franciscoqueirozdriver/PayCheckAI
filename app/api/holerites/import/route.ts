@@ -1,14 +1,11 @@
 import { NextResponse } from 'next/server';
 import { extractTextFromPdfBuffer } from '@/lib/holeriteParser';
-import { processHoleriteText } from '@/lib/importHolerites';
-import type { ImportPreview } from '@/models/holerite';
+import { extractValorLiquido, extractTotalVencimentos } from '@/lib/importHolerites';
 
 export async function POST(req: Request) {
   const formData = await req.formData();
   const files = formData.getAll('files');
-  const userEmail = formData.get('user_email') as string | null;
-
-  const previews: ImportPreview[] = [];
+  const results: { filename: string; text?: string; valorLiquido?: string | null; totalVencimentos?: string | null; error?: string }[] = [];
 
   for (const file of files) {
     if (!(file instanceof File)) continue;
@@ -16,17 +13,14 @@ export async function POST(req: Request) {
     const buffer = Buffer.from(arrayBuffer);
     try {
       const text = await extractTextFromPdfBuffer(buffer);
-      const { extracted, candidates } = processHoleriteText(text, { userEmail: userEmail || undefined, fonte: file.name });
-      previews.push({ extracted, candidates, filename: file.name });
+      const valorLiquido = extractValorLiquido(text);
+      const totalVencimentos = extractTotalVencimentos(text);
+      results.push({ filename: file.name, text: text, valorLiquido: valorLiquido, totalVencimentos: totalVencimentos });
     } catch (err:any) {
       console.error(`Failed to process file ${file.name}:`, err);
-      previews.push({
-        extracted: { fonte_arquivo: file.name, status_validacao: 'erro' },
-        candidates: {},
-        filename: file.name,
-      });
+      results.push({ filename: file.name, error: err.message });
     }
   }
 
-  return NextResponse.json(previews);
+  return NextResponse.json(results);
 }
