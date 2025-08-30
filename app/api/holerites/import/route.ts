@@ -31,14 +31,18 @@ export async function POST(req: Request) {
   for (const f of files) {
     if (!(f instanceof File)) continue;
     const buf = Buffer.from(await f.arrayBuffer());
-    const parsed = await processHoleriteBuffer(buf, { filename: f.name, userEmail });
-    const extracted = normalizeKeys(parsed?.extracted ?? {});
-    const candidates = {} as Record<ColKey, string[]>;
-    for (const k of COLS) {
-      const arr = parsed?.candidates?.[k] ?? parsed?.candidates?.[toCamel(k)];
-      candidates[k] = Array.isArray(arr) ? arr.map(String) : [];
+    try {
+      const parsed = await processHoleriteBuffer(buf, { filename: f.name, userEmail });
+      const extracted = normalizeKeys(parsed?.extracted ?? {});
+      const candidates = {} as Record<ColKey, string[]>;
+      for (const k of COLS) {
+        const arr = parsed?.candidates?.[k] ?? parsed?.candidates?.[toCamel(k)];
+        candidates[k] = Array.isArray(arr) ? arr.map(String) : [];
+      }
+      results.push({ extracted, candidates, filename: f.name });
+    } catch (err: any) {
+      results.push({ extracted: normalizeKeys({}), candidates: {} as Record<ColKey,string[]>, filename: f.name, error: String(err?.message || err) });
     }
-    results.push({ extracted, candidates, filename: f.name });
   }
 
   return NextResponse.json(results, { status: 200 });

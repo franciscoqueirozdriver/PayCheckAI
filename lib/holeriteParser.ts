@@ -1,7 +1,5 @@
 import * as fs from 'fs/promises';
-import { createWorker, PSM } from 'tesseract.js';
 import { ocrLog, ocrLogEnabled } from './ocrLogger';
-import sharp from 'sharp';
 import { RubricaEntry } from '../types/holerite';
 
 export async function extractPdfText(buffer: Buffer): Promise<string> {
@@ -11,10 +9,12 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
 }
 
 export async function preprocessForOCR(input: Buffer): Promise<Buffer> {
+  const sharp = (await import('sharp')).default;
   return sharp(input).grayscale().normalize().toBuffer();
 }
 
 async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
+  const sharp = (await import('sharp')).default;
   const first = sharp(buffer, { density: 300 });
   const { pages = 1 } = await first.metadata();
   const imgs: Buffer[] = [];
@@ -26,28 +26,34 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
 }
 
 export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
-  ocrLog('preprocess:start');
-  const pre = await preprocessForOCR(buffer);
-  ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
-
-  const worker = await createWorker('por+eng', 1, {
-    logger: ocrLogEnabled ? m => ocrLog('tesseract', m) : undefined,
-  });
-
   try {
-    // 3 = AUTO
-    ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: PSM.AUTO });
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-    ocrLog('worker:setParameters:done');
+    const { createWorker, PSM } = await import('tesseract.js');
+    ocrLog('preprocess:start');
+    const pre = await preprocessForOCR(buffer);
+    ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
 
-    ocrLog('worker:recognize:start');
-    const { data: { text } } = await worker.recognize(pre);
-    ocrLog('worker:recognize:done', { chars: text?.length ?? 0 });
-    return text || '';
-  } finally {
-    ocrLog('worker:terminate:start');
-    await worker.terminate();
-    ocrLog('worker:terminate:done');
+    const worker = await createWorker('por+eng', 1, {
+      logger: ocrLogEnabled ? m => ocrLog('tesseract', m) : undefined,
+    });
+
+    try {
+      // 3 = AUTO
+      ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: PSM.AUTO });
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+      ocrLog('worker:setParameters:done');
+
+      ocrLog('worker:recognize:start');
+      const { data: { text } } = await worker.recognize(pre);
+      ocrLog('worker:recognize:done', { chars: text?.length ?? 0 });
+      return text || '';
+    } finally {
+      ocrLog('worker:terminate:start');
+      await worker.terminate();
+      ocrLog('worker:terminate:done');
+    }
+  } catch (err) {
+    ocrLog('tesseract:error', { message: (err as Error).message });
+    return '';
   }
 }
 
@@ -70,22 +76,26 @@ export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'v
   if (text.trim().length > 40) {
     return cleanText(text);
   }
-  const pages = await pdfToImages(buffer);
-  const texts: string[] = [];
-  for (const img of pages) {
-    let pageText = '';
-    if (ocrEngine === 'vision') {
-      try {
-        pageText = await ocrWithVision(img);
-      } catch {
+  try {
+    const pages = await pdfToImages(buffer);
+    const texts: string[] = [];
+    for (const img of pages) {
+      let pageText = '';
+      if (ocrEngine === 'vision') {
+        try {
+          pageText = await ocrWithVision(img);
+        } catch {
+          pageText = await ocrWithTesseract(img);
+        }
+      } else {
         pageText = await ocrWithTesseract(img);
       }
-    } else {
-      pageText = await ocrWithTesseract(img);
+      texts.push(pageText);
     }
-    texts.push(pageText);
+    return cleanText(texts.join('\n'));
+  } catch {
+    return '';
   }
-  return cleanText(texts.join('\n'));
 }
 
 // Variant of extractTextFromPdf that accepts a Buffer instead of a file path.
@@ -101,22 +111,26 @@ export async function extractTextFromPdfBuffer(buffer: Buffer, ocrEngine: 'tesse
   if (text.trim().length > 40) {
     return cleanText(text);
   }
-  const pages = await pdfToImages(buffer);
-  const texts: string[] = [];
-  for (const img of pages) {
-    let pageText = '';
-    if (ocrEngine === 'vision') {
-      try {
-        pageText = await ocrWithVision(img);
-      } catch {
+  try {
+    const pages = await pdfToImages(buffer);
+    const texts: string[] = [];
+    for (const img of pages) {
+      let pageText = '';
+      if (ocrEngine === 'vision') {
+        try {
+          pageText = await ocrWithVision(img);
+        } catch {
+          pageText = await ocrWithTesseract(img);
+        }
+      } else {
         pageText = await ocrWithTesseract(img);
       }
-    } else {
-      pageText = await ocrWithTesseract(img);
+      texts.push(pageText);
     }
-    texts.push(pageText);
+    return cleanText(texts.join('\n'));
+  } catch {
+    return '';
   }
-  return cleanText(texts.join('\n'));
 }
 
 function cleanText(t: string): string {
