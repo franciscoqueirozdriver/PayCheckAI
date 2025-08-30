@@ -68,6 +68,30 @@ Calcula os dias úteis e de descanso para um determinado mês.
   /api/dsr/calendario?year=2025&month=8&uf=MG&ibge=3106200&includeSaturday=0&considerarFeriados=1
   ```
 
+## Extração de dados de holerite
+
+O utilitário `extractor/extract.js` processa um holerite em PDF e devolve um JSON
+com os principais totais e itens encontrados.
+
+### Dependências
+
+```bash
+npm install pdf-parse diacritics tesseract.js # tesseract.js é opcional
+```
+
+Para o fallback de OCR é necessário ter o
+[`poppler-utils`](https://poppler.freedesktop.org/) instalado para fornecer o
+comando `pdftoppm`.
+
+### Uso
+
+```bash
+node extractor/extract.js caminho/para/holerite.pdf
+```
+
+O script remove trechos duplicados do PDF e recorre a OCR quando não há texto
+embutido.
+
 ## Checklist de Deploy (Anti-404 Vercel)
 
 Para garantir que a aplicação funcione corretamente na Vercel e evitar erros 404:
