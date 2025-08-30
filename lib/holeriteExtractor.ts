@@ -1,6 +1,5 @@
 import fs from 'fs';
 import pdfParse from 'pdf-parse';
-import { remove as removeDiacritics } from 'diacritics';
 import { spawnSync } from 'child_process';
 
 function toBRNumber(s: string | null | undefined): number | null {
@@ -18,7 +17,11 @@ function clean(s: string): string {
     .trim();
 }
 
-const stripAccentsUpper = (s: string) => removeDiacritics(s).toUpperCase();
+const stripAccentsUpper = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
 
 function uniqLinesPreservingOrder(lines: string[]): string[] {
   const seen = new Set<string>();
