@@ -1,130 +1,104 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { HoleriteDraft, CandidatesMap } from '@/types/holerite';
-import { Dropbox } from './Dropbox';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { useEffect, useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { ComboboxEditable } from "./ComboboxEditable";
+import { RubricasEditor } from "./RubricasEditor";
+import type { HoleriteDraft, CandidatesMap } from "@/models/holerite";
 
-interface Props {
+type Props = {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  itemIndex: number;
-  totalItems: number;
-  pdfFile?: File;
+  file?: File;
   extracted: HoleriteDraft;
   candidates?: CandidatesMap;
   onSave: (finalData: HoleriteDraft) => Promise<void>;
-  onPrev: () => void;
-  onNext: () => void;
-}
+};
 
-const FIELDS: Array<{ key: keyof HoleriteDraft; label: string; placeholder?: string; textarea?: boolean }> = [
-  { key: 'empresa', label: 'Empresa' },
-  { key: 'cnpj_empresa', label: 'CNPJ da Empresa' },
-  { key: 'colaborador', label: 'Colaborador' },
-  { key: 'cpf_colaborador', label: 'CPF do Colaborador' },
-  { key: 'mes', label: 'Mês (YYYY-MM)', placeholder: 'Ex: 2024-01' },
-  { key: 'competencia', label: 'Competência', placeholder: 'Ex: Janeiro de 2024' },
-  { key: 'data_pagamento', label: 'Data de Pagamento' },
-  { key: 'matricula', label: 'Matrícula' },
-  { key: 'cargo', label: 'Cargo' },
-  { key: 'departamento', label: 'Departamento' },
-  { key: 'salario_base', label: 'Salário Base' },
-  { key: 'total_proventos', label: 'Total de Proventos' },
-  { key: 'total_descontos', label: 'Total de Descontos' },
-  { key: 'valor_liquido', label: 'Valor Líquido' },
-  { key: 'base_inss', label: 'Base INSS' },
-  { key: 'base_fgts', label: 'Base FGTS' },
-  { key: 'base_irrf', label: 'Base IRRF' },
-  { key: 'fgts_mes', label: 'FGTS do Mês' },
-  { key: 'rubricas_json', label: 'Rubricas (JSON)', textarea: true },
+const FIELD_ORDER: (keyof HoleriteDraft)[] = [
+  "id_holerite",
+  "mes","competencia","empresa","cnpj_empresa",
+  "colaborador","cpf_colaborador","matricula","cargo","departamento",
+  "salario_base","comissao","dsr","dias_dsr",
+  "valor_bruto","valor_liquido","data_pagamento","user_email",
+  "fonte_arquivo","holerite_id","status_validacao",
+  "total_proventos","total_descontos","base_inss","base_fgts","base_irrf","fgts_mes",
+  // rubricas_json fica por último com editor especial
 ];
 
-export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, totalItems, pdfFile, extracted, candidates, onSave, onPrev, onNext }: Props) {
-  const [form, setForm] = useState<HoleriteDraft>(extracted);
-  const [pdfUrl, setPdfUrl] = useState<string | undefined>(undefined);
-  const [isSaving, setIsSaving] = useState(false);
+export default function HoleriteReviewDialog({ open, onOpenChange, file, extracted, candidates, onSave }: Props) {
+  const [form, setForm] = useState<HoleriteDraft>(extracted || {});
+  useEffect(() => { setForm(extracted || {}); }, [extracted, open]);
 
-  useEffect(() => {
-    setForm(extracted);
-  }, [extracted]);
+  function setField<K extends keyof HoleriteDraft>(key: K, val: string) {
+    setForm((prev) => ({ ...prev, [key]: val }));
+  }
 
-  useEffect(() => {
-    if (pdfFile) {
-      const url = URL.createObjectURL(pdfFile);
-      setPdfUrl(url);
-      return () => URL.revokeObjectURL(url);
-    }
-  }, [pdfFile]);
+  const blobUrl = useMemo(() => (file ? URL.createObjectURL(file) : undefined), [file]);
+  useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
 
-  const setField = (key: keyof HoleriteDraft, value: string) => {
-    setForm(prev => ({ ...prev, [key]: value }));
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-        await onSave(form);
-    } finally {
-        setIsSaving(false);
-    }
-  };
+  async function handleSave() {
+    const payload: HoleriteDraft = { ...form };
+    await onSave(payload);
+    onOpenChange(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl h-[90vh] flex flex-col">
-            <DialogHeader>
-                <DialogTitle>Revisão de Holerite ({itemIndex + 1} de {totalItems})</DialogTitle>
-            </DialogHeader>
-            <div className="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
-                <div className="bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
-                    {pdfUrl ? (
-                        <embed src={pdfUrl} type="application/pdf" className="w-full h-full" />
-                    ) : (
-                        <p className="text-gray-500">Preview do PDF não disponível.</p>
-                    )}
-                </div>
-                <div className="overflow-y-auto pr-2 space-y-4">
-                    {FIELDS.map(({ key, label, placeholder, textarea }) => (
-                        <div key={key}>
-                            {textarea ? (
-                                <div className="space-y-1">
-                                    <label className="text-sm font-medium">{label}</label>
-                                    <textarea
-                                        value={form[key] || ''}
-                                        placeholder={placeholder}
-                                        onChange={e => setField(key, e.target.value)}
-                                        className="w-full p-2 border rounded-md min-h-[100px] text-xs"
-                                    />
-                                </div>
-                            ) : (
-                                <Dropbox
-                                    label={label}
-                                    value={form[key]}
-                                    candidates={candidates?.[key]}
-                                    placeholder={placeholder}
-                                    onChange={v => setField(key, v)}
-                                />
-                            )}
-                        </div>
-                    ))}
-                </div>
+      <DialogContent className="max-w-[1200px] p-0 overflow-hidden">
+        <DialogHeader className="px-6 pt-6">
+          <DialogTitle>Verifique os dados antes de salvar</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-12 gap-0">
+          {/* Preview do PDF (esquerda) */}
+          <div className="col-span-5 border-r">
+            <div className="p-4">
+              {blobUrl ? (
+                <embed src={blobUrl} type="application/pdf" className="w-full h-[72vh] rounded-xl border" />
+              ) : (
+                <div className="text-sm text-muted-foreground">Sem arquivo para pré-visualizar.</div>
+              )}
             </div>
-            <DialogFooter className="mt-4">
-                <div className="flex justify-between w-full">
-                    <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
-                    <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={onPrev} disabled={itemIndex <= 0}>Anterior</Button>
-                        <span>{itemIndex + 1} / {totalItems}</span>
-                        <Button variant="outline" onClick={onNext} disabled={itemIndex >= totalItems - 1}>Próximo</Button>
-                        <Button onClick={handleSave} disabled={isSaving}>
-                            {isSaving ? 'Salvando...' : 'Salvar e Avançar'}
-                        </Button>
-                    </div>
+          </div>
+
+          {/* Form (direita) */}
+          <div className="col-span-7">
+            <ScrollArea className="h-[78vh]">
+              <div className="p-6 space-y-4">
+                {/* Campos em combobox */}
+                <div className="grid grid-cols-2 gap-4">
+                  {FIELD_ORDER.map((key) => (
+                    <ComboboxEditable
+                      key={key}
+                      label={key}
+                      value={form[key] as string | undefined}
+                      options={candidates?.[key] || []}
+                      onChange={(v) => setField(key, v)}
+                    />
+                  ))}
                 </div>
+
+                <Separator />
+
+                {/* Rubricas com editor especial */}
+                <RubricasEditor
+                  value={form.rubricas_json}
+                  onChange={(v) => setField("rubricas_json", v)}
+                />
+              </div>
+            </ScrollArea>
+
+            <DialogFooter className="px-6 pb-6 gap-2">
+              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button onClick={handleSave}>Salvar</Button>
             </DialogFooter>
-        </DialogContent>
+          </div>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }
