@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
 
 type Props = {
   value?: string;
@@ -16,15 +14,24 @@ export function RubricasEditor({ value, onChange }: Props) {
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">rubricas_json</div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setExpanded((v) => !v)}>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="px-2 py-1 border rounded-md text-sm"
+        >
           {expanded ? "Ocultar JSON" : "Ver/Editar JSON"}
-        </Button>
+        </button>
       </div>
 
       {expanded ? (
-        <Textarea rows={8} value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
+        <textarea
+          rows={8}
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full border rounded-md p-2 text-sm"
+        />
       ) : (
-        <div className="text-xs text-muted-foreground">
+        <div className="text-xs text-gray-500">
           {value?.slice(0, 200) || "Sem rubricas..."}{value && value.length > 200 ? " ..." : ""}
         </div>
       )}
