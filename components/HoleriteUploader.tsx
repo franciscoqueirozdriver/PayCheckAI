@@ -21,12 +21,15 @@ export default function HoleriteUploader() {
         method: 'POST',
         body: formData,
       });
-      if (!res.ok) throw new Error('Failed to extract');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Falha na extração');
+      }
       const data = await res.json();
       setResult(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setResult({ error: 'Falha na extração' });
+      setResult({ error: err.message || 'Falha na extração' });
     } finally {
       setIsLoading(false);
     }
