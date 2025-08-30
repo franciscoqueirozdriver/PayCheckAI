@@ -34,7 +34,8 @@ const FIELD_ORDER: (keyof HoleriteDraft)[] = [
 
 export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, totalItems, file, extracted, candidates, onSave, onPrev, onNext }: Props) {
   const [form, setForm] = useState<HoleriteDraft>(extracted ?? {});
-  useEffect(() => { setForm(extracted ?? {}); }, [extracted, itemIndex]);
+  const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => { setForm(extracted ?? {}); setConfirmed(false); }, [extracted, itemIndex, open]);
 
   function setField<K extends keyof HoleriteDraft>(key: K, val: string) {
     setForm((prev) => ({ ...prev, [key]: val }));
@@ -66,29 +67,59 @@ export default function HoleriteReviewDialog({ open, onOpenChange, itemIndex, to
           <div className="col-span-7">
             <ScrollArea className="h-[78vh]">
               <div className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  {FIELD_ORDER.map((key) => (
-                    <ComboboxEditable
-                      key={key}
-                      label={key}
-                      value={form[key] as string | undefined}
-                      options={candidates?.[key] || []}
-                      onChange={(v) => setField(key, v)}
+                {confirmed ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      {FIELD_ORDER.map((key) => (
+                        <ComboboxEditable
+                          key={key}
+                          label={key}
+                          value={form[key] as string | undefined}
+                          options={candidates?.[key] || []}
+                          onChange={(v) => setField(key, v)}
+                        />
+                      ))}
+                    </div>
+                    <Separator />
+                    <RubricasEditor
+                      value={form.rubricas_json}
+                      onChange={(v) => setField("rubricas_json", v)}
                     />
-                  ))}
-                </div>
-                <Separator />
-                <RubricasEditor
-                  value={form.rubricas_json}
-                  onChange={(v) => setField("rubricas_json", v)}
-                />
+                  </>
+                ) : (
+                  <div className="space-y-4 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                      {FIELD_ORDER.map((key) => (
+                        <div key={key}>
+                          <span className="font-medium">{key}</span>: {extracted[key] as string | undefined}
+                        </div>
+                      ))}
+                    </div>
+                    <Separator />
+                    <div>
+                      <div className="font-medium mb-1">rubricas_json</div>
+                      <pre className="bg-muted p-2 rounded whitespace-pre-wrap">
+                        {extracted.rubricas_json}
+                      </pre>
+                    </div>
+                  </div>
+                )}
               </div>
             </ScrollArea>
             <DialogFooter className="px-6 pb-6 gap-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button variant="outline" disabled={itemIndex === 0} onClick={onPrev}>Anterior</Button>
-              <Button variant="outline" disabled={itemIndex >= totalItems - 1} onClick={onNext}>Próximo</Button>
-              <Button onClick={handleSave}>Salvar</Button>
+              {confirmed ? (
+                <>
+                  <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+                  <Button variant="outline" disabled={itemIndex === 0} onClick={onPrev}>Anterior</Button>
+                  <Button variant="outline" disabled={itemIndex >= totalItems - 1} onClick={onNext}>Próximo</Button>
+                  <Button onClick={handleSave}>Salvar</Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+                  <Button onClick={() => setConfirmed(true)}>Editar</Button>
+                </>
+              )}
             </DialogFooter>
           </div>
         </div>
