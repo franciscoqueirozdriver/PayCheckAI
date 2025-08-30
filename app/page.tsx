@@ -5,6 +5,7 @@ import HeaderStats from '../components/dsr/HeaderStats';
 import Filters from '../components/dsr/Filters';
 import GlobalRates from '../components/dsr/GlobalRates';
 import PaymentsTable from '../components/dsr/PaymentsTable';
+import HoleriteUploader from '../components/HoleriteUploader';
 import {
   Payment,
   BasesSelecionadas,
@@ -161,6 +162,7 @@ export default function Page() {
 
   return (
     <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
+      <HoleriteUploader />
       <HeaderStats
         period={params.period}
         onPeriodChange={handlePeriodChange}
