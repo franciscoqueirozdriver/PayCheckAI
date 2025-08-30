@@ -25,8 +25,8 @@ function toBRNumber(v?: string): number {
 }
 
 function toMoneyStr(n?: number): string {
-  if (!n || isNaN(n)) return '';
-  return n.toFixed(2);
+  if (n == null || isNaN(n)) return '';
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function toISODate(v?: string): string {
@@ -63,31 +63,70 @@ function fromKV(kv: Record<string,string>, keys: string[]): string {
   return '';
 }
 
-function parseRubricasFromTables(tables: string[][][]): ReturnType<typeof parseRubricas> {
+function cleanBR(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function isMoneyBR(s: string): boolean {
+  return /\d/.test(s) && /\d{1,3}(?:\.\d{3})*,\d{2}/.test(s.replace(/\s+/g,''));
+}
+
+type Rubrica = {
+  codigo?: string;
+  descricao: string;
+  quantidade?: string;
+  valor_provento?: string;
+  valor_desconto?: string;
+};
+
+function parseRubricasFromTables(tables: string[][][]): Rubrica[] {
+  let bestScore = 0;
+  const scored: Array<{ table: string[][]; score: number; mapping: Record<string, number> }> = [];
   for (const table of tables) {
     if (!table.length) continue;
-    const header = table[0].map(h=>normalizeKey(h));
-    const codIdx = header.findIndex(h=>/cod/.test(h));
-    const descIdx = header.findIndex(h=>/desc/.test(h));
-    const refIdx = header.findIndex(h=>/ref|quant/.test(h));
-    const provIdx = header.findIndex(h=>/venc|provent/.test(h));
-    const descVIdx = header.findIndex(h=>/desc|descont/.test(h));
-    if (codIdx === -1 || descIdx === -1) continue;
-    const out: ReturnType<typeof parseRubricas> = [];
-    for (const row of table.slice(1)) {
-      const codigo = row[codIdx];
-      if (!codigo) continue;
-      out.push({
-        codigo,
-        descricao: row[descIdx] || '',
-        quantidade: row[refIdx] || '',
-        valor_provento: toBRNumber(row[provIdx]),
-        valor_desconto: toBRNumber(row[descVIdx])
-      });
+    const header = table[0].map(h => normalizeKey(h));
+    const mapping: Record<string, number> = {};
+    const patterns: Record<string, RegExp> = {
+      codigo: /^c(ó|o)d(igo)?|cod$/i,
+      descricao: /descri(c|ç)ao|evento/i,
+      quantidade: /refer(e|ê)ncia|qtd|qtde/i,
+      provento: /venc(i|í)mentos|proventos/i,
+      desconto: /descontos?/i,
+    };
+    let score = 0;
+    header.forEach((h, idx) => {
+      for (const [k, r] of Object.entries(patterns)) {
+        if (r.test(h)) {
+          mapping[k] = idx;
+          score++;
+          break;
+        }
+      }
+    });
+    if (score > 0) {
+      scored.push({ table, score, mapping });
+      if (score > bestScore) bestScore = score;
     }
-    if (out.length) return out;
   }
-  return [];
+
+  const rubricas: Rubrica[] = [];
+  for (const s of scored.filter(s => s.score === bestScore)) {
+    const { table, mapping } = s;
+    for (const row of table.slice(1)) {
+      const codigo = mapping.codigo !== undefined ? cleanBR(row[mapping.codigo] || '') : undefined;
+      const descricao = cleanBR(row[mapping.descricao] || '');
+      if (!descricao || /^total/i.test(descricao)) continue;
+      const quantidade = mapping.quantidade !== undefined ? cleanBR(row[mapping.quantidade] || '') : undefined;
+      const proventoStr = mapping.provento !== undefined ? cleanBR(row[mapping.provento] || '') : '';
+      const descontoStr = mapping.desconto !== undefined ? cleanBR(row[mapping.desconto] || '') : '';
+      const isEmpty = [codigo, descricao, quantidade, proventoStr, descontoStr].every(v => !v);
+      if (isEmpty || /^[-]+$/.test(descricao)) continue;
+      const valor_provento = isMoneyBR(proventoStr) ? proventoStr : '';
+      const valor_desconto = isMoneyBR(descontoStr) ? descontoStr : '';
+      rubricas.push({ codigo, descricao, quantidade, valor_provento, valor_desconto });
+    }
+  }
+  return rubricas;
 }
 
 export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: string; userEmail?: string }): Promise<{ extracted: HoleriteDraft; candidates: CandidatesMap }> {
@@ -183,17 +222,33 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
   const data_pagamento = toISODate(dateMatches[0]);
   const dataPagtoCandidates = uniq(dateMatches.map(toISODate));
 
-  let rubricas = tables.length ? parseRubricasFromTables(tables) : [];
-  if (!rubricas.length) rubricas = parseRubricas(text);
+  let rubricas: Rubrica[] = tables.length ? parseRubricasFromTables(tables) : [];
+  if (!rubricas.length) {
+    const fallback = parseRubricas(text);
+    rubricas = fallback.map(r => ({
+      codigo: r.codigo,
+      descricao: r.descricao,
+      quantidade: r.quantidade,
+      valor_provento: r.valor_provento ? toMoneyStr(r.valor_provento) : '',
+      valor_desconto: r.valor_desconto ? toMoneyStr(r.valor_desconto) : '',
+    }));
+  }
   const rubricas_json = JSON.stringify(rubricas);
-  const totalProventosNum = rubricas.reduce((s,r)=>s+(r.valor_provento||0),0);
-  const totalDescontosNum = rubricas.reduce((s,r)=>s+(r.valor_desconto||0),0);
-  const valorLiquidoNum = totalProventosNum - totalDescontosNum;
+
+  const totalProventosNum = rubricas.reduce((s,r)=>s+toBRNumber(r.valor_provento),0);
+  const totalDescontosNum = rubricas.reduce((s,r)=>s+toBRNumber(r.valor_desconto),0);
+  const totalProventosKV = fromKV(kv,['total proventos','total vencimentos']);
+  const totalDescontosKV = fromKV(kv,['total descontos']);
+  const liquidoKV = fromKV(kv,['líquido a receber','líquido']);
+  const totalProventos = totalProventosKV ? toBRNumber(totalProventosKV) : totalProventosNum;
+  const totalDescontos = totalDescontosKV ? toBRNumber(totalDescontosKV) : totalDescontosNum;
+  const valorLiquidoNum = liquidoKV ? toBRNumber(liquidoKV) : (totalProventos - totalDescontos);
   const salarioBaseRub = rubricas.find(r=>/SAL[ÁA]RIO\s*BASE/i.test(r.descricao));
-  const salarioBaseNum = salarioBaseRub ? (salarioBaseRub.valor_provento||0) - (salarioBaseRub.valor_desconto||0) : 0;
-  const comissaoNum = rubricas.filter(r=>/COMISS(ÃO|AO)?/i.test(r.descricao)).reduce((s,r)=>s+(r.valor_provento||0)-(r.valor_desconto||0),0);
+  const salarioBaseNum = salarioBaseRub ? toBRNumber(salarioBaseRub.valor_provento) - toBRNumber(salarioBaseRub.valor_desconto) : 0;
+  const comissaoRub = rubricas.filter(r=>/COMISS(ÃO|AO)?/i.test(r.descricao));
+  const comissaoNum = comissaoRub.reduce((s,r)=>s+toBRNumber(r.valor_provento) - toBRNumber(r.valor_desconto),0);
   const dsrRub = rubricas.filter(r=>/\bDSR\b|DESCANSO SEMANAL REMUNERADO|REP\.\s*REM/i.test(r.descricao));
-  const dsrNum = dsrRub.reduce((s,r)=>s+(r.valor_provento||0)-(r.valor_desconto||0),0);
+  const dsrNum = dsrRub.reduce((s,r)=>s+toBRNumber(r.valor_provento) - toBRNumber(r.valor_desconto),0);
   const diasDsr = dsrRub[0]?.quantidade || '';
 
   const base_inss_num = toBRNumber(fromKV(kv,['base inss']) || '');
@@ -216,7 +271,7 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
     comissao: toMoneyStr(comissaoNum),
     dsr: toMoneyStr(dsrNum),
     dias_dsr: diasDsr ? String(diasDsr) : '',
-    valor_bruto: toMoneyStr(totalProventosNum),
+    valor_bruto: toMoneyStr(totalProventos),
     valor_liquido: toMoneyStr(valorLiquidoNum),
     data_pagamento,
     user_email: opts.userEmail || '',
@@ -224,8 +279,8 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
     holerite_id: fromKV(kv,['holerite']) || '',
     rubricas_json,
     status_validacao: '',
-    total_proventos: toMoneyStr(totalProventosNum),
-    total_descontos: toMoneyStr(totalDescontosNum),
+    total_proventos: toMoneyStr(totalProventos),
+    total_descontos: toMoneyStr(totalDescontos),
     base_inss: toMoneyStr(base_inss_num),
     base_fgts: toMoneyStr(base_fgts_num),
     base_irrf: toMoneyStr(base_irrf_num),
@@ -245,13 +300,13 @@ export async function processHoleriteBuffer(buffer: Buffer, opts: { filename: st
     mes: uniq(mesIsoCandidates),
     competencia: uniq(mesTextoCandidates),
     data_pagamento: dataPagtoCandidates,
-    salario_base: uniq([toMoneyStr(salarioBaseNum)]),
-    comissao: uniq([toMoneyStr(comissaoNum), ...rubricas.filter(r=>/COMISS(ÃO|AO)?/i.test(r.descricao)).map(r=>toMoneyStr((r.valor_provento||0)-(r.valor_desconto||0)))]),
-    dsr: uniq([toMoneyStr(dsrNum)]),
+    salario_base: uniq([toMoneyStr(salarioBaseNum), salarioBaseRub?.valor_provento || '', salarioBaseRub?.valor_desconto || ''].filter(Boolean)),
+    comissao: uniq([toMoneyStr(comissaoNum), ...comissaoRub.map(r=>toMoneyStr(toBRNumber(r.valor_provento) - toBRNumber(r.valor_desconto)))]),
+    dsr: uniq([toMoneyStr(dsrNum), ...dsrRub.map(r=>toMoneyStr(toBRNumber(r.valor_provento) - toBRNumber(r.valor_desconto)))]),
     dias_dsr: uniq(dsrRub.map(r=>r.quantidade).filter(Boolean) as string[]),
-    total_proventos: uniq([toMoneyStr(totalProventosNum)]),
-    total_descontos: uniq([toMoneyStr(totalDescontosNum)]),
-    valor_liquido: uniq([toMoneyStr(valorLiquidoNum)]),
+    total_proventos: uniq([toMoneyStr(totalProventos), totalProventosKV && cleanBR(totalProventosKV)].filter(Boolean)),
+    total_descontos: uniq([toMoneyStr(totalDescontos), totalDescontosKV && cleanBR(totalDescontosKV)].filter(Boolean)),
+    valor_liquido: uniq([toMoneyStr(valorLiquidoNum), liquidoKV && cleanBR(liquidoKV)].filter(Boolean)),
     base_inss: uniq([toMoneyStr(base_inss_num)]),
     base_fgts: uniq([toMoneyStr(base_fgts_num)]),
     base_irrf: uniq([toMoneyStr(base_irrf_num)]),

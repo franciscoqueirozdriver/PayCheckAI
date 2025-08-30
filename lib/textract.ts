@@ -32,18 +32,28 @@ export type TextractResult = {
 
 export async function runTextract(buffer: Buffer, filename: string): Promise<TextractResult> {
   const client = buildClient();
+  let buf = buffer;
+  try {
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(buf).metadata();
+    const rotate: Record<number, number> = { 3:180, 6:90, 8:270 };
+    if (meta.orientation && rotate[meta.orientation]) {
+      buf = await sharp(buf).rotate(rotate[meta.orientation]).toBuffer();
+    }
+  } catch {}
+
   let output: AnalyzeDocumentCommandOutput | undefined;
 
-  if (buffer.byteLength <= FIVE_MB) {
+  if (buf.byteLength <= FIVE_MB) {
     output = await client.send(new AnalyzeDocumentCommand({
-      Document: { Bytes: buffer },
+      Document: { Bytes: buf },
       FeatureTypes: ['FORMS', 'TABLES']
     }));
   } else {
     const bucket = process.env.AWS_TEXTRACT_S3_BUCKET;
     if (!bucket) throw new Error('File too large for Textract bytes and no S3 bucket configured');
     const s3 = buildS3();
-    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: filename, Body: buffer }));
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: filename, Body: buf }));
     const start: StartDocumentAnalysisCommandOutput = await client.send(new StartDocumentAnalysisCommand({
       DocumentLocation: { S3Object: { Bucket: bucket, Name: filename } },
       FeatureTypes: ['FORMS', 'TABLES']
