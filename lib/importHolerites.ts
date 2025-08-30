@@ -29,7 +29,9 @@ function monthNameToNumber(name: string): string | null {
   return map[name] || null;
 }
 
-function extractFields(text: string, options: {userEmail?: string, dataPagamentoDefault?: string, fonte: string}): HoleriteRow {
+// Exported for reuse by API routes that need to parse holerites without immediately
+// writing to Google Sheets.
+export function extractFields(text: string, options: {userEmail?: string, dataPagamentoDefault?: string, fonte: string}): HoleriteRow {
   const empresa = matchLine(text, /empresa[:\s]*([\w .-]+)/i);
   const cnpj = formatCnpj(matchLine(text, /cnpj[:\s]*([0-9\.\/-]+)/i));
   const colaborador = matchLine(text, /(colaborador|empregado|funcion\w+)[:\s]*([\w .-]+)/i,2);

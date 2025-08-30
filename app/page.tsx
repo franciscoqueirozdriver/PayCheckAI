@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import HeaderStats from '../components/dsr/HeaderStats';
 import Filters from '../components/dsr/Filters';
 import GlobalRates from '../components/dsr/GlobalRates';
@@ -11,6 +11,9 @@ import {
   AliquotasGlobais,
 } from '../types/dsr';
 import { applyGlobalRatesToRows } from '../lib/dsr';
+import HoleriteReviewDialog from '../components/HoleriteReviewDialog';
+import type { HoleriteDraft, CandidatesMap, ImportPreview } from '@/models/holerite';
+import { Button } from '@/components/ui/button';
 
 // --- Type definition for the new API response ---
 interface CalendarData {
@@ -58,6 +61,78 @@ export default function Page() {
   const [aliquotas, setAliquotas] = useState<AliquotasGlobais>(DEFAULT_ALIQUOTAS);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [bases, setBases] = useState<BasesSelecionadas>(DEFAULT_BASES);
+
+  // --- Holerite import states ---
+  const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates: CandidatesMap }>>([]);
+  const [cursor, setCursor] = useState(0);
+  const [openReview, setOpenReview] = useState(false);
+  const [results, setResults] = useState<Array<{ empresa?: string; mes?: string; valor_liquido?: string; status_validacao?: string }>>([]);
+  const [summary, setSummary] = useState<{ imported: number; updated: number; pendentes: number }>({ imported: 0, updated: 0, pendentes: 0 });
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Holerite handlers ---
+  async function onImport(filesArr: File[], userEmail?: string) {
+    const fd = new FormData();
+    filesArr.forEach(f => fd.append('files', f));
+    if (userEmail) fd.append('user_email', userEmail);
+    let previews: ImportPreview[] = [];
+    try {
+      const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      previews = await res.json();
+    } catch (err) {
+      console.error('Falha ao importar holerites', err);
+      throw err;
+    }
+    const merged = previews.map((p, i) => ({
+      file: filesArr[i],
+      extracted: p.extracted,
+      candidates: p.candidates || {},
+    }));
+    setItems(merged);
+    setCursor(0);
+    setOpenReview(true);
+  }
+
+  const handleButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arr = Array.from(e.target.files ?? []);
+    if (!arr.length) return;
+    try {
+      await onImport(arr);
+    } catch {
+      alert('Falha ao processar os arquivos');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleSave = async (finalData: HoleriteDraft) => {
+    const res = await fetch('/api/holerites/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalData) });
+    const json = await res.json();
+    if (json?.ok) {
+      setResults(r => [...r, { empresa: finalData.empresa, mes: finalData.mes, valor_liquido: finalData.valor_liquido, status_validacao: finalData.status_validacao }]);
+      setSummary(s => ({
+        imported: s.imported + (json.action === 'inserted' ? 1 : 0),
+        updated: s.updated + (json.action === 'updated' ? 1 : 0),
+        pendentes: s.pendentes + (finalData.status_validacao !== 'ok' ? 1 : 0),
+      }));
+      if (cursor < items.length - 1) {
+        setCursor(c => c + 1);
+      } else {
+        setOpenReview(false);
+        setItems([]);
+      }
+    } else {
+      alert('Erro ao salvar');
+    }
+  };
 
   // --- New state for API data ---
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
@@ -160,7 +235,48 @@ export default function Page() {
   const handleApplyRates = () => { setRows((prev) => applyGlobalRatesToRows(prev, aliquotas)); };
 
   return (
+    <>
     <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
+      <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
+        <h2 className="text-xl font-bold mb-4">Importar Holerites</h2>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <Button onClick={handleButtonClick}>Importar</Button>
+      </section>
+
+      {results.length > 0 && (
+        <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
+          <div className="mb-2">
+            Importados: {summary.imported} | Atualizados: {summary.updated} | Com pendências: {summary.pendentes}
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left">
+                <th className="p-2">Empresa</th>
+                <th className="p-2">Mês</th>
+                <th className="p-2">Valor líquido</th>
+                <th className="p-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, i) => (
+                <tr key={i} className="border-t">
+                  <td className="p-2">{r.empresa}</td>
+                  <td className="p-2">{r.mes}</td>
+                  <td className="p-2">{r.valor_liquido}</td>
+                  <td className="p-2">{r.status_validacao}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
       <HeaderStats
         period={params.period}
         onPeriodChange={handlePeriodChange}
@@ -195,9 +311,20 @@ export default function Page() {
         diasDescanso={diasDescanso}
         diasUteisDivisor={diasUteisDivisor}
       />
-      <button className="fixed right-4 bottom-4 bg-gray-700 text-white p-3 rounded-full">
-        ⚙️
-      </button>
+      <button className="fixed right-4 bottom-4 bg-gray-700 text-white p-3 rounded-full">⚙️</button>
     </main>
+    <HoleriteReviewDialog
+      open={openReview}
+      onOpenChange={setOpenReview}
+      itemIndex={cursor}
+      totalItems={items.length}
+      file={items[cursor]?.file}
+      extracted={items[cursor]?.extracted || {}}
+      candidates={items[cursor]?.candidates || {}}
+      onSave={handleSave}
+      onPrev={() => setCursor(c => Math.max(0, c - 1))}
+      onNext={() => setCursor(c => Math.min(items.length - 1, c + 1))}
+    />
+    </>
   );
 }
