@@ -26,22 +26,28 @@ async function pdfToImages(buffer: Buffer): Promise<Buffer[]> {
 }
 
 export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
-  ocrLog('preprocess:start');
-  const pre = await preprocessForOCR(buffer);
-  ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
+  let processedBuffer = buffer;
+  try {
+    ocrLog('preprocess:start');
+    processedBuffer = await preprocessForOCR(buffer);
+    ocrLog('preprocess:done', { inputBytes: buffer.byteLength });
+  } catch (error) {
+    console.error("Failed to preprocess image for OCR, attempting with original image.", error);
+    ocrLog('preprocess:failed', { error: (error as Error).message });
+    // Keep processedBuffer as the original buffer
+  }
 
   const worker = await createWorker('por+eng', 1, {
     logger: ocrLogEnabled ? m => ocrLog('tesseract', m) : undefined,
   });
 
   try {
-    // 3 = AUTO
     ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: PSM.AUTO });
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
     ocrLog('worker:setParameters:done');
 
     ocrLog('worker:recognize:start');
-    const { data: { text } } = await worker.recognize(pre);
+    const { data: { text } } = await worker.recognize(processedBuffer);
     ocrLog('worker:recognize:done', { chars: text?.length ?? 0 });
     return text || '';
   } finally {
