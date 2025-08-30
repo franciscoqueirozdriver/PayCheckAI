@@ -15,3 +15,11 @@ export type ImportPreview = {
   candidates?: CandidatesMap;
   filename: string;
 };
+
+export interface RubricaEntry {
+  codigo: string;
+  descricao: string;
+  quantidade?: string;
+  valor_provento?: number;
+  valor_desconto?: number;
+}

@@ -2,7 +2,8 @@ import * as fs from 'fs/promises';
 import { createWorker, PSM } from 'tesseract.js';
 import { ocrLog, ocrLogEnabled } from './ocrLogger';
 import sharp from 'sharp';
-import { RubricaEntry } from '../types/holerite';
+import type { RubricaEntry } from '@/models/holerite';
+
 
 export async function extractPdfText(buffer: Buffer): Promise<string> {
   const pdfParse = (await import('pdf-parse')).default;
@@ -34,7 +35,6 @@ export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   } catch (error) {
     console.error("Failed to preprocess image for OCR, attempting with original image.", error);
     ocrLog('preprocess:failed', { error: (error as Error).message });
-    // Keep processedBuffer as the original buffer
   }
 
   const worker = await createWorker('por+eng', 1, {
@@ -42,31 +42,15 @@ export async function ocrWithTesseract(buffer: Buffer): Promise<string> {
   });
 
   try {
-    ocrLog('worker:setParameters:start', { tessedit_pageseg_mode: PSM.AUTO });
     await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
-    ocrLog('worker:setParameters:done');
-
-    ocrLog('worker:recognize:start');
     const { data: { text } } = await worker.recognize(processedBuffer);
-    ocrLog('worker:recognize:done', { chars: text?.length ?? 0 });
     return text || '';
   } finally {
-    ocrLog('worker:terminate:start');
     await worker.terminate();
-    ocrLog('worker:terminate:done');
   }
 }
 
-export async function ocrWithVision(buffer: Buffer): Promise<string> {
-  const { ImageAnnotatorClient } = await import('@google-cloud/vision');
-  const client = new ImageAnnotatorClient();
-  const [result] = await client.textDetection({ image: { content: buffer } });
-  return result?.fullTextAnnotation?.text ?? '';
-}
-
-// Extract text from PDF (native or scanned)
-export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'vision'='tesseract'): Promise<string> {
-  const buffer = await fs.readFile(file);
+export async function extractTextFromPdfBuffer(buffer: Buffer): Promise<string> {
   let text = '';
   try {
     text = await extractPdfText(buffer);
@@ -76,51 +60,19 @@ export async function extractTextFromPdf(file: string, ocrEngine: 'tesseract'|'v
   if (text.trim().length > 40) {
     return cleanText(text);
   }
-  const pages = await pdfToImages(buffer);
-  const texts: string[] = [];
-  for (const img of pages) {
-    let pageText = '';
-    if (ocrEngine === 'vision') {
-      try {
-        pageText = await ocrWithVision(img);
-      } catch {
-        pageText = await ocrWithTesseract(img);
-      }
-    } else {
-      pageText = await ocrWithTesseract(img);
-    }
-    texts.push(pageText);
-  }
-  return cleanText(texts.join('\n'));
-}
 
-// Variant of extractTextFromPdf that accepts a Buffer instead of a file path.
-// This is useful for API routes where the PDF is uploaded via multipart form data
-// and not saved to disk. The logic mirrors extractTextFromPdf above.
-export async function extractTextFromPdfBuffer(buffer: Buffer, ocrEngine: 'tesseract'|'vision'='tesseract'): Promise<string> {
-  let text = '';
+  let pages: Buffer[] = [];
   try {
-    text = await extractPdfText(buffer);
-  } catch {
-    text = '';
+    pages = await pdfToImages(buffer);
+  } catch (error) {
+     console.error("Failed to convert PDF to images, it might be a corrupted or unusual PDF.", error);
+     // If pdfToImages fails, we can't proceed with OCR. Return empty text.
+     return '';
   }
-  if (text.trim().length > 40) {
-    return cleanText(text);
-  }
-  const pages = await pdfToImages(buffer);
+
   const texts: string[] = [];
   for (const img of pages) {
-    let pageText = '';
-    if (ocrEngine === 'vision') {
-      try {
-        pageText = await ocrWithVision(img);
-      } catch {
-        pageText = await ocrWithTesseract(img);
-      }
-    } else {
-      pageText = await ocrWithTesseract(img);
-    }
-    texts.push(pageText);
+    texts.push(await ocrWithTesseract(img));
   }
   return cleanText(texts.join('\n'));
 }
@@ -129,7 +81,6 @@ function cleanText(t: string): string {
   return t.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
 }
 
-// Normalize currency string to number
 export function normalizeCurrency(v?: string): number {
   if (!v) return 0;
   const s = v.replace(/[^0-9,-]/g, '').replace('.', '').replace(',', '.');
@@ -137,7 +88,6 @@ export function normalizeCurrency(v?: string): number {
   return isNaN(n) ? 0 : n;
 }
 
-// Normalize date dd/mm/yyyy to yyyy-mm-dd
 export function normalizeDate(v?: string): string {
   if (!v) return '';
   const m = v.match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
@@ -147,7 +97,6 @@ export function normalizeDate(v?: string): string {
   return `${year.padStart(4,'0')}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
 }
 
-// Parse rubrica table from text
 export function parseRubricas(text: string): RubricaEntry[] {
   const lines = text.split('\n');
   const rubricas: RubricaEntry[] = [];

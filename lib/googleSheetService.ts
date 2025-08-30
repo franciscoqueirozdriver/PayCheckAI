@@ -1,31 +1,21 @@
 import { GoogleSpreadsheet, GoogleSpreadsheetRow } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 
-let doc: GoogleSpreadsheet;
-
-async function getDoc(): Promise<GoogleSpreadsheet> {
-    if (doc) return doc;
-
-    // Valida a existência das variáveis de ambiente essenciais.
-    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY || !process.env.SPREADSHEET_ID) {
-        throw new Error('Credenciais do Google Sheets não encontradas nas variáveis de ambiente. Verifique o arquivo .env.local.');
-    }
-
-    // Configura a autenticação JWT para a conta de serviço.
-    const serviceAccountAuth = new JWT({
-      email: process.env.GOOGLE_CLIENT_EMAIL,
-      // A chave privada é lida do .env e as quebras de linha (\\n) são substituídas por \n.
-      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-
-    // Instancia o documento da planilha usando o ID e a autenticação.
-    const newDoc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
-    await newDoc.loadInfo(); // Carrega as propriedades do documento e as informações das abas.
-    doc = newDoc;
-    return doc;
+// Valida a existência das variáveis de ambiente essenciais.
+if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY || !process.env.SPREADSHEET_ID) {
+    throw new Error('Credenciais do Google Sheets não encontradas nas variáveis de ambiente. Verifique o arquivo .env.local.');
 }
 
+// Configura a autenticação JWT para a conta de serviço.
+const serviceAccountAuth = new JWT({
+  email: process.env.GOOGLE_CLIENT_EMAIL,
+  // A chave privada é lida do .env e as quebras de linha (\\n) são substituídas por \n.
+  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+});
+
+// Instancia o documento da planilha usando o ID e a autenticação.
+const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
 
 /**
  * Carrega o documento da Planilha Google e retorna uma aba (worksheet) específica pelo título.
@@ -34,7 +24,7 @@ async function getDoc(): Promise<GoogleSpreadsheet> {
  * @throws Lança um erro se a aba não for encontrada.
  */
 async function getSheetByTitle(sheetTitle: string) {
-    const doc = await getDoc();
+    await doc.loadInfo(); // Carrega as propriedades do documento e as informações das abas.
     const sheet = doc.sheetsByTitle[sheetTitle];
     if (!sheet) {
         throw new Error(`A aba com o título "${sheetTitle}" não foi encontrada.`);

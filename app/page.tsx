@@ -11,11 +11,7 @@ import {
   AliquotasGlobais,
 } from '../types/dsr';
 import { applyGlobalRatesToRows } from '../lib/dsr';
-// New imports from user's example
-import HoleriteReviewDialog from "@/components/HoleriteReviewDialog";
-import type { HoleriteDraft, CandidatesMap } from "@/models/holerite";
-import { Button } from "@/components/ui/button";
-
+import HoleriteReviewDialog, { HoleriteDraft, CandidatesMap } from '../components/HoleriteReviewDialog';
 
 // --- Type definition for the new API response ---
 interface CalendarData {
@@ -58,62 +54,64 @@ const DEFAULT_ROWS: Payment[] = [
   { id: '6', dataPagamento: '2025-08-04', empresa: 'Driver Empresa 04', tipo: 'Implantação', parcela: '2 de 2', valorBruto: 60000, percImposto: 19, percComissao: 20, status: 'Previsto' },
 ];
 
-// New type from user's example
-type Item = { file: File; extracted: HoleriteDraft; candidates: CandidatesMap };
-
 export default function Page() {
-  // DSR States
   const [rows, setRows] = useState<Payment[]>([]);
   const [aliquotas, setAliquotas] = useState<AliquotasGlobais>(DEFAULT_ALIQUOTAS);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [bases, setBases] = useState<BasesSelecionadas>(DEFAULT_BASES);
+
+  // --- Holerite import states ---
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [items, setItems] = useState<Array<{ file: File; extracted: HoleriteDraft; candidates?: CandidatesMap }>>([]);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const [results, setResults] = useState<Array<{ empresa?: string; mes?: string; valor_liquido?: string; status_validacao?: string }>>([]);
+  const [summary, setSummary] = useState<{ imported: number; updated: number; pendentes: number }>({ imported: 0, updated: 0, pendentes: 0 });
+
+  // --- Holerite handlers ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFiles(e.target.files);
+  };
+
+  const handleImport = async () => {
+    if (!files || files.length === 0) return;
+    const fd = new FormData();
+    Array.from(files).forEach(f => fd.append('files', f));
+    const res = await fetch('/api/holerites/import', { method: 'POST', body: fd });
+    const data = await res.json();
+    const arr = data.map((d: any, i: number) => ({ file: files[i], extracted: d.extracted as HoleriteDraft, candidates: d.candidates as CandidatesMap }));
+    setItems(arr);
+    setReviewOpen(true);
+    setCursor(0);
+  };
+
+  const handleSave = async (finalData: HoleriteDraft) => {
+    const res = await fetch('/api/holerites/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(finalData) });
+    const json = await res.json();
+    if (json?.ok) {
+      setResults(r => [...r, { empresa: finalData.empresa, mes: finalData.mes, valor_liquido: finalData.valor_liquido, status_validacao: finalData.status_validacao }]);
+      setSummary(s => ({
+        imported: s.imported + (json.action === 'inserted' ? 1 : 0),
+        updated: s.updated + (json.action === 'updated' ? 1 : 0),
+        pendentes: s.pendentes + (finalData.status_validacao !== 'ok' ? 1 : 0),
+      }));
+      if (cursor < items.length - 1) {
+        setCursor(c => c + 1);
+      } else {
+        setReviewOpen(false);
+        setFiles(null);
+        setItems([]);
+      }
+    } else {
+      alert('Erro ao salvar');
+    }
+  };
+
+  // --- New state for API data ---
   const [calendarData, setCalendarData] = useState<CalendarData | null>(null);
   const [isLoadingCalendar, setIsLoadingCalendar] = useState(true);
 
-  // New Holerite import states
-  const [items, setItems] = useState<Item[]>([]);
-  const [open, setOpen] = useState(false);
-  const [idx, setIdx] = useState(0);
-  const [rawTextData, setRawTextData] = useState<any>(null);
-
-  // New Holerite handlers
-  async function handleImport(input: HTMLInputElement) {
-    const files = Array.from(input.files || []);
-    if (!files.length) return;
-
-    setRawTextData('Extraindo texto...');
-    const fd = new FormData();
-    files.forEach(f => fd.append("files", f));
-
-    const res = await fetch("/api/holerites/import", { method: "POST", body: fd });
-    const results = await res.json();
-    setRawTextData(results);
-
-    input.value = ""; // limpa seleção
-  }
-
-  async function saveToSheets(finalData: HoleriteDraft) {
-    const r = await fetch("/api/holerites/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(finalData),
-    });
-    if (!r.ok) {
-        // A simple alert for now, could be a toast notification
-        alert("Falha ao salvar o holerite.");
-        throw new Error("Falha ao salvar");
-    }
-
-    // Advance to the next item if there is one
-    if (idx < items.length - 1) {
-      setIdx(prev => prev + 1);
-    } else {
-      // If it's the last one, close the modal
-      setOpen(false);
-    }
-  }
-
-  // Load from localStorage (runs once on mount) - DSR
+  // Load from localStorage (runs once on mount)
   useEffect(() => {
     const storedRows = localStorage.getItem('dsr_lancamentos');
     const storedAliq = localStorage.getItem('dsr_aliquotas_globais');
@@ -128,19 +126,19 @@ export default function Page() {
     }
   }, []);
 
-  // Persist state to localStorage (unchanged) - DSR
+  // Persist state to localStorage (unchanged)
   useEffect(() => { localStorage.setItem('dsr_lancamentos', JSON.stringify(rows)); }, [rows]);
   useEffect(() => { localStorage.setItem('dsr_aliquotas_globais', JSON.stringify(aliquotas)); }, [aliquotas]);
   useEffect(() => { localStorage.setItem('dsr_parametros', JSON.stringify({ ...params, bases })); }, [params, bases]);
 
-  // Apply global rates when locked (unchanged) - DSR
+  // Apply global rates when locked (unchanged)
   useEffect(() => {
     if (aliquotas.locked) {
       setRows((prev) => applyGlobalRatesToRows(prev, aliquotas));
     }
   }, [aliquotas.imposto, aliquotas.comissao, aliquotas.locked]);
 
-  // Fetch calendar data from API - DSR
+  // --- NEW: Fetch calendar data from API ---
   useEffect(() => {
     const fetchCalendarData = async () => {
       setIsLoadingCalendar(true);
@@ -175,7 +173,7 @@ export default function Page() {
     }
   }, [params.period, params.uf, params.municipio, params.includeSaturday, params.considerarFeriados]);
 
-  // Derive calendar values from state - DSR
+  // --- NEW: Derive calendar values from state ---
   const diasUteisSemSabado = calendarData?.businessDays.withoutSaturday ?? 0;
   const diasUteisComSabado = calendarData?.businessDays.withSaturday ?? 0;
   const diasDescanso = (calendarData?.sundays ?? 0) + (calendarData?.holidaysUtil ?? 0);
@@ -183,7 +181,7 @@ export default function Page() {
     ? diasUteisComSabado
     : diasUteisSemSabado;
 
-  // DSR Handlers
+  // --- Handlers are mostly unchanged ---
   const handlePeriodChange = (value: string) => setParams((p) => ({ ...p, period: value }));
   const handleAddRow = () => {
     setRows((r) => [
@@ -209,28 +207,48 @@ export default function Page() {
   };
   const handleApplyRates = () => { setRows((prev) => applyGlobalRatesToRows(prev, aliquotas)); };
 
-  const current = items[idx];
-
   return (
     <>
     <main className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8 space-y-6">
       <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
         <h2 className="text-xl font-bold mb-4">Importar Holerites</h2>
-        <div className="flex items-center gap-3">
-            <input id="uploader" type="file" accept="application/pdf" multiple hidden onChange={(e) => handleImport(e.currentTarget)} />
-            <Button onClick={() => document.getElementById("uploader")?.click()}>Importar holerites</Button>
-        </div>
+        <input type="file" accept="application/pdf" multiple onChange={handleFileChange} />
+        <button
+          className="ml-2 px-4 py-2 bg-blue-600 text-white rounded-md disabled:opacity-50"
+          disabled={!files || files.length === 0}
+          onClick={handleImport}
+        >
+          Importar
+        </button>
       </section>
 
-      {rawTextData && (
+      {results.length > 0 && (
         <section className="bg-card p-card-p rounded-2xl shadow-elevation-1">
-            <h2 className="text-xl font-bold mb-4">Passo 1: Texto Extraído</h2>
-            <p className="text-sm text-muted-foreground mb-4">O texto abaixo foi extraído do seu PDF. Por favor, verifique se ele corresponde ao conteúdo do arquivo. Se estiver correto, podemos prosseguir para a próxima etapa de identificação dos campos.</p>
-            <div className="text-xs bg-gray-100 p-4 rounded-md overflow-auto max-h-96">{JSON.stringify(rawTextData, null, 2)}</div>
+          <div className="mb-2">
+            Importados: {summary.imported} | Atualizados: {summary.updated} | Com pendências: {summary.pendentes}
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left">
+                <th className="p-2">Empresa</th>
+                <th className="p-2">Mês</th>
+                <th className="p-2">Valor líquido</th>
+                <th className="p-2">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, i) => (
+                <tr key={i} className="border-t">
+                  <td className="p-2">{r.empresa}</td>
+                  <td className="p-2">{r.mes}</td>
+                  <td className="p-2">{r.valor_liquido}</td>
+                  <td className="p-2">{r.status_validacao}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
-
-      {/* DSR Components */}
       <HeaderStats
         period={params.period}
         onPeriodChange={handlePeriodChange}
@@ -268,12 +286,16 @@ export default function Page() {
       <button className="fixed right-4 bottom-4 bg-gray-700 text-white p-3 rounded-full">⚙️</button>
     </main>
     <HoleriteReviewDialog
-        open={open}
-        onOpenChange={setOpen}
-        file={current?.file}
-        extracted={current?.extracted || {}}
-        candidates={current?.candidates || {}}
-        onSave={saveToSheets}
+      open={reviewOpen}
+      onOpenChange={setReviewOpen}
+      itemIndex={cursor}
+      totalItems={items.length}
+      pdfFile={items[cursor]?.file}
+      extracted={items[cursor]?.extracted || {}}
+      candidates={items[cursor]?.candidates}
+      onSave={handleSave}
+      onPrev={() => setCursor(c => Math.max(0, c - 1))}
+      onNext={() => setCursor(c => Math.min(items.length - 1, c + 1))}
     />
     </>
   );
